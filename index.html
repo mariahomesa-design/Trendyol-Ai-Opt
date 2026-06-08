@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrendLift AI Listings Optimizer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">TL</div>
+          <div>
+            <strong>TrendLift</strong>
+            <span>Trendyol optimizer</span>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="Primary navigation">
+          <button class="nav-item active" type="button" data-view="dashboard">
+            <span data-lucide="layout-dashboard"></span>
+            Dashboard
+          </button>
+          <button class="nav-item" type="button" data-view="listings">
+            <span data-lucide="package-search"></span>
+            Listings
+          </button>
+          <button class="nav-item" type="button" data-view="keywords">
+            <span data-lucide="search-check"></span>
+            Keywords
+          </button>
+          <button class="nav-item" type="button" data-view="create">
+            <span data-lucide="square-plus"></span>
+            Create listing
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <span data-lucide="settings-2"></span>
+            Settings
+          </button>
+        </nav>
+
+        <div class="connection-card" id="connectionCard">
+          <div class="connection-icon"><span data-lucide="plug-zap"></span></div>
+          <h2>Not connected</h2>
+          <p>Add Trendyol API credentials in Settings, or load demo data.</p>
+          <button class="primary-btn full" id="sidebarConnectBtn" type="button">
+            <span data-lucide="key-round"></span>
+            Open settings
+          </button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="viewEyebrow">Seller workspace</p>
+            <h1 id="viewTitle">Review and improve your Trendyol listings</h1>
+          </div>
+          <div class="topbar-actions">
+            <label class="search-box">
+              <span data-lucide="search"></span>
+              <input id="searchInput" type="search" placeholder="Search product, SKU, barcode, keyword" />
+            </label>
+            <button class="ghost-btn" id="syncBtn" type="button">
+              <span data-lucide="refresh-cw"></span>
+              Sync
+            </button>
+          </div>
+        </header>
+
+        <section class="view-section active" id="dashboardView" data-view-panel="dashboard">
+          <section class="connect-banner" id="connectBanner">
+            <div>
+              <p class="eyebrow">Real account testing</p>
+              <h2>Connect through the local proxy before importing live Trendyol listings.</h2>
+              <p>
+                Credentials are sent to your local server, not stored inside the browser bundle.
+                Demo mode stays available for quick testing without touching a real account.
+              </p>
+            </div>
+            <div class="button-row">
+              <button class="primary-btn" id="bannerSettingsBtn" type="button">
+                <span data-lucide="key-round"></span>
+                Add credentials
+              </button>
+              <button class="ghost-btn" id="demoBtn" type="button">
+                <span data-lucide="flask-conical"></span>
+                Demo data
+              </button>
+            </div>
+          </section>
+
+          <section class="metrics-grid" aria-label="Store performance metrics">
+            <article class="metric">
+              <span class="metric-icon amber" data-lucide="sparkles"></span>
+              <div>
+                <strong id="optimizationScore">0</strong>
+                <span>Photos analyzed</span>
+              </div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon blue" data-lucide="package"></span>
+              <div>
+                <strong id="listingCount">0</strong>
+                <span>Synced listings</span>
+              </div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon green" data-lucide="trending-up"></span>
+              <div>
+                <strong id="trafficLift">0</strong>
+                <span>Drafts ready to review</span>
+              </div>
+            </article>
+            <article class="metric">
+              <span class="metric-icon rose" data-lucide="alert-triangle"></span>
+              <div>
+                <strong id="needsWork">0</strong>
+                <span>Needs photo analysis</span>
+              </div>
+            </article>
+          </section>
+
+          <section class="content-grid">
+            <div class="panel listings-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Review queue</p>
+                  <h2>Listings that need attention</h2>
+                </div>
+                <div class="button-row">
+                  <button class="ghost-btn" id="bulkOptimizeBtn" type="button">
+                    <span data-lucide="wand-sparkles"></span>
+                    Analyze next 5
+                  </button>
+                </div>
+              </div>
+              <div class="listing-table" id="dashboardListingTable" aria-live="polite"></div>
+            </div>
+
+            <aside class="panel insight-panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Selected product</p>
+                  <h2 id="selectedTitle">No listing selected</h2>
+                </div>
+                <span class="score-pill" id="selectedScore">--</span>
+              </div>
+              <div class="insight-empty" id="insightEmpty">
+                <span data-lucide="mouse-pointer-click"></span>
+                <p>Select a listing to check its product photo and review changes.</p>
+              </div>
+              <div class="insight-body hidden" id="insightBody">
+                <div class="image-frame"><img id="selectedImage" alt="" /></div>
+                <div class="recommendation-block">
+                  <h3>What needs fixing</h3>
+                  <ul id="targetList"></ul>
+                </div>
+                <div class="recommendation-block">
+                  <h3 id="keywordDemandTitle">Relevant search terms</h3>
+                  <div id="keywordChips" class="keyword-chips"></div>
+                </div>
+                <div class="recommendation-block">
+                  <h3>Recommended listing</h3>
+                  <div class="rewrite-preview">
+                    <label>
+                      Title
+                      <textarea id="titlePreview" maxlength="100" rows="3"></textarea>
+                    </label>
+                    <label>
+                      Description
+                      <textarea id="descriptionPreview" rows="6"></textarea>
+                    </label>
+                  </div>
+                </div>
+                <div class="button-grid">
+                  <button class="primary-btn" id="optimizeBtn" type="button">
+                    <span data-lucide="wand-sparkles"></span>
+                    Analyze product photo
+                  </button>
+                  <button class="ghost-btn" id="publishBtn" type="button">
+                    <span data-lucide="send"></span>
+                    Publish approved changes
+                  </button>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </section>
+
+        <section class="view-section" id="listingsView" data-view-panel="listings">
+          <div class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Catalog</p>
+                <h2>All listings</h2>
+              </div>
+              <div class="segmented-control" role="tablist" aria-label="Listing filters">
+                <button class="segment active" type="button" data-filter="all">All</button>
+                <button class="segment" type="button" data-filter="needs">Needs analysis</button>
+                <button class="segment" type="button" data-filter="draft">Ready to review</button>
+                <button class="segment" type="button" data-filter="optimized">Published</button>
+              </div>
+            </div>
+            <div class="table-toolbar">
+              <div class="catalog-summary" id="catalogSummary">No listings loaded</div>
+              <label class="compact-select">
+                Sort
+                <select id="sortMode">
+                  <option value="score">Needs analysis first</option>
+                  <option value="title">Title A-Z</option>
+                  <option value="stock">Lowest stock</option>
+                  <option value="updated">Latest draft</option>
+                </select>
+              </label>
+              <label class="compact-select">
+                Rows
+                <select id="pageSize">
+                  <option value="25">25</option>
+                  <option value="50" selected>50</option>
+                  <option value="100">100</option>
+                  <option value="200">200</option>
+                </select>
+              </label>
+              <button class="ghost-btn" id="exportBtn" type="button">
+                <span data-lucide="file-spreadsheet"></span>
+                Prepare Excel batch
+              </button>
+              <label class="file-btn">
+                <span data-lucide="upload"></span>
+                Import reviewed Excel
+                <input id="importInput" type="file" accept=".xls,.csv,application/vnd.ms-excel,text/csv" />
+              </label>
+              <button class="primary-btn" id="publishImportedBtn" type="button">
+                <span data-lucide="send"></span>
+                Publish imported
+              </button>
+            </div>
+            <div class="listing-table" id="listingTable" aria-live="polite"></div>
+            <div class="pager" id="listingPager">
+              <button class="ghost-btn" id="prevPageBtn" type="button">
+                <span data-lucide="chevron-left"></span>
+                Previous
+              </button>
+              <span id="pageInfo">Page 1 of 1</span>
+              <button class="ghost-btn" id="nextPageBtn" type="button">
+                Next
+                <span data-lucide="chevron-right"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="panel detail-panel">
+            <div class="panel-header compact">
+              <div>
+                <p class="eyebrow">Listing review</p>
+                <h2 id="detailTitle">Select a listing</h2>
+              </div>
+              <span class="score-pill" id="detailStatus">--</span>
+            </div>
+            <div class="detail-body" id="detailBody">
+              <div class="insight-empty">
+                <span data-lucide="mouse-pointer-click"></span>
+                <p>Click any listing to view all images, current details, and recommended updates.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view-section" id="keywordsView" data-view-panel="keywords">
+          <div class="keyword-layout">
+            <div class="panel keyword-panel">
+              <div class="panel-header keyword-panel-header">
+                <div class="keyword-panel-heading">
+                  <p class="eyebrow">Search data</p>
+                  <h2>Product search terms</h2>
+                </div>
+                <div class="keyword-actions" aria-label="Search term actions">
+                  <button class="ghost-btn" id="refreshKeywordsBtn" type="button">
+                    <span data-lucide="radar"></span>
+                    Refresh
+                  </button>
+                  <button class="ghost-btn" id="openGoogleTrendsBtn" type="button">
+                    <span data-lucide="external-link"></span>
+                    Open Saudi Google Trends
+                  </button>
+                  <label class="file-btn">
+                    <span data-lucide="upload"></span>
+                    Import Trends CSV
+                    <input id="googleTrendsInput" type="file" accept=".csv,text/csv" />
+                  </label>
+                  <label class="file-btn">
+                    <span data-lucide="database"></span>
+                    Import monthly CSV
+                    <input id="keywordDataInput" type="file" accept=".csv,text/csv" />
+                  </label>
+                </div>
+              </div>
+              <div class="keyword-table" id="keywordTable"></div>
+              <p class="panel-note">
+                Google Trends uses relative interest, not monthly search volume. Analyze a product photo, open its Saudi Trends page, download the related-queries CSV, then import it here.
+              </p>
+            </div>
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Rules</p>
+                  <h2>Optimization policy</h2>
+                </div>
+              </div>
+              <form class="settings-form" id="policyForm">
+                <label>
+                  Title max length
+                  <input id="titleLimit" type="number" min="40" max="120" value="100" />
+                </label>
+                <label>
+                  Minimum monthly searches
+                  <input id="minSearches" type="number" min="0" step="100" value="3000" />
+                </label>
+                <label>
+                  Output language
+                  <select id="languageMode">
+                    <option value="en">English</option>
+                    <option value="ar">Arabic / العربية</option>
+                  </select>
+                </label>
+                <label class="checkbox-row">
+                  <input id="protectBrandTerms" type="checkbox" checked />
+                  Keep protected brand terms unchanged
+                </label>
+                <button class="primary-btn" type="submit">
+                  <span data-lucide="save"></span>
+                  Save policy
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="view-section" id="createView" data-view-panel="create">
+          <div class="create-layout">
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Image-first listing</p>
+                  <h2>Create a new Trendyol listing</h2>
+                </div>
+                <span class="score-pill" id="createAiStatus">AI check required</span>
+              </div>
+              <div class="create-upload">
+                <label class="upload-drop">
+                  <span data-lucide="image-up"></span>
+                  <strong>Add the main product image</strong>
+                  <span>JPEG, PNG or WebP</span>
+                  <input id="newProductImage" type="file" accept="image/jpeg,image/png,image/webp" />
+                </label>
+                <img class="create-preview hidden" id="newProductPreview" alt="New product preview" />
+                <div class="button-grid">
+                  <button class="primary-btn" id="analyzeNewProductBtn" type="button">
+                    <span data-lucide="scan-search"></span>
+                    Analyze image
+                  </button>
+                  <button class="ghost-btn" id="generateImagesBtn" type="button">
+                    <span data-lucide="images"></span>
+                    Generate 5 listing images
+                  </button>
+                </div>
+                <label>
+                  Image direction (optional)
+                  <textarea id="imageCreativeDirection" rows="3" placeholder="Example: Use a warm modern Saudi living room with cream walls and natural daylight."></textarea>
+                </label>
+                <section class="logo-settings" aria-labelledby="sellerLogoTitle">
+                  <div class="logo-settings-heading">
+                    <div>
+                      <strong id="sellerLogoTitle">Seller logo</strong>
+                      <span>Saved for future listing images</span>
+                    </div>
+                    <button class="danger-icon-btn hidden" id="removeSellerLogoBtn" type="button" title="Remove saved logo" aria-label="Remove saved logo">
+                      <span data-lucide="trash-2"></span>
+                    </button>
+                  </div>
+                  <div class="logo-controls">
+                    <label class="logo-upload">
+                      <span data-lucide="badge-plus"></span>
+                      <span id="sellerLogoUploadText">Upload logo</span>
+                      <input id="sellerLogoInput" type="file" accept="image/png,image/jpeg,image/webp" />
+                    </label>
+                    <label>
+                      Logo position
+                      <select id="sellerLogoPosition">
+                        <option value="top-left">Top left corner</option>
+                        <option value="top-right">Top right corner</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="seller-logo-preview hidden" id="sellerLogoPreviewWrap">
+                    <img id="sellerLogoPreview" alt="Saved seller logo" />
+                    <span>White background is removed automatically.</span>
+                  </div>
+                </section>
+                <div class="image-generation-status hidden" id="imageGenerationStatus"></div>
+                <div class="generated-image-grid" id="newProductGallery"></div>
+                <p class="field-note">Generated images are 1200 × 1800 px. Click any image to inspect it at full size.</p>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Review data</p>
+                  <h2>Product information</h2>
+                </div>
+              </div>
+              <form class="settings-form" id="newProductForm">
+                <div class="warning-box hidden" id="newProductWarning"></div>
+                <label>
+                  Title
+                  <input id="newTitle" maxlength="100" />
+                  <span class="field-note" id="newTitleCount">Maximum: 100 characters</span>
+                </label>
+                <label>
+                  Description (minimum 500 characters)
+                  <textarea id="newDescription" rows="7"></textarea>
+                </label>
+                <div class="form-grid">
+                  <label>Brand ID<input id="newBrandId" type="number" min="1" /></label>
+                  <label>
+                    Suggested category
+                    <input id="newSuggestedCategory" readonly placeholder="Analyze image first" />
+                  </label>
+                  <label>
+                    Category ID
+                    <input id="newCategoryId" type="number" min="1" list="newCategoryOptions" />
+                    <datalist id="newCategoryOptions"></datalist>
+                  </label>
+                  <label>List price (SAR)<input id="newListPrice" type="number" min="0" step="0.01" /></label>
+                  <label>Sale price (SAR)<input id="newSalePrice" type="number" min="0" step="0.01" /></label>
+                  <label>Quantity<input id="newQuantity" type="number" min="0" value="1" /></label>
+                  <label>VAT rate<input id="newVatRate" type="number" min="0" value="15" /></label>
+                  <label>Dimensional weight<input id="newDimensionalWeight" type="number" min="0" step="0.1" value="1" /></label>
+                  <label>Barcode<input id="newBarcode" maxlength="40" placeholder="Enter barcode" /></label>
+                  <label>Model code<input id="newModelCode" maxlength="40" placeholder="Enter model code" /></label>
+                  <label>Stock code<input id="newStockCode" maxlength="100" placeholder="Enter stock code" /></label>
+                  <label>
+                    Origin
+                    <select id="newOrigin">
+                      <option value="SA" selected>Saudi Arabia (SA)</option>
+                      <option value="TR">Türkiye (TR)</option>
+                      <option value="CN">China (CN)</option>
+                      <option value="AE">United Arab Emirates (AE)</option>
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  AI-prepared product attributes
+                  <textarea id="newAttributes" rows="7" placeholder='Analyze the product image to prepare its attributes.'></textarea>
+                </label>
+                <p class="field-note">The app checks the live Trendyol category schema and converts AI findings to valid attribute IDs and values.</p>
+                <div class="required-attribute-fields hidden" id="requiredAttributeFields"></div>
+                <section class="listing-readiness" id="listingReadiness">
+                  <div class="listing-readiness-heading">
+                    <div>
+                      <strong>Listing readiness</strong>
+                      <span id="listingReadinessSummary">Analyze the product to begin.</span>
+                    </div>
+                    <span class="score-pill" id="listingReadinessBadge">Not ready</span>
+                  </div>
+                  <div class="readiness-grid" id="listingReadinessItems"></div>
+                </section>
+                <button class="primary-btn" id="submitNewProductBtn" type="submit">
+                  <span data-lucide="send"></span>
+                  List on Trendyol
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <section class="view-section" id="settingsView" data-view-panel="settings">
+          <div class="settings-grid">
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Connection</p>
+                  <h2>Trendyol API credentials</h2>
+                </div>
+                <span class="score-pill" id="serverStatus">Checking...</span>
+              </div>
+              <form class="settings-form" id="credentialsForm">
+                <div class="marketplace-note">
+                  <strong>Saudi Arabia marketplace</strong>
+                  <span>Currency: SAR · Default output: English · Optional output: Arabic</span>
+                </div>
+                <label>
+                  Seller ID
+                  <input id="sellerId" autocomplete="off" placeholder="123456" />
+                </label>
+                <label>
+                  API key
+                  <input id="apiKey" autocomplete="off" placeholder="Trendyol API key" />
+                </label>
+                <label>
+                  API secret
+                  <input id="apiSecret" type="password" autocomplete="off" placeholder="Trendyol API secret" />
+                </label>
+                <label>
+                  Environment
+                  <select id="environment">
+                    <option value="prod">Production</option>
+                    <option value="stage">Stage</option>
+                  </select>
+                </label>
+                <label>
+                  Storefront code
+                  <select id="storeFrontCode">
+                    <option value="SA" selected>Saudi Arabia</option>
+                  </select>
+                </label>
+                <div class="button-grid">
+                  <button class="primary-btn" type="submit">
+                    <span data-lucide="plug-zap"></span>
+                    Test connection
+                  </button>
+                  <button class="ghost-btn" id="disconnectBtn" type="button">
+                    <span data-lucide="unlink"></span>
+                    Disconnect
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Publishing</p>
+                  <h2>Safety controls</h2>
+                </div>
+              </div>
+              <form class="settings-form" id="publishSettingsForm">
+                <label class="checkbox-row">
+                  <input id="dryRunMode" type="checkbox" />
+                  Dry-run publishing until I approve backend publishing
+                </label>
+                <label class="checkbox-row">
+                  <input id="requireDraftReview" type="checkbox" checked />
+                  Require manual review before publishing
+                </label>
+                <label>
+                  Local proxy URL
+                  <input id="proxyUrl" value="" placeholder="Same origin, or http://localhost:4174" />
+                </label>
+                <button class="primary-btn" type="submit">
+                  <span data-lucide="save"></span>
+                  Save settings
+                </button>
+              </form>
+            </div>
+
+            <div class="panel">
+              <div class="panel-header compact">
+                <div>
+                  <p class="eyebrow">Image intelligence</p>
+                  <h2>AI providers</h2>
+                </div>
+                <span class="score-pill" id="aiStatus">Not configured</span>
+              </div>
+              <form class="settings-form" id="aiSettingsForm">
+                <p class="field-note">Choose providers separately for listing analysis and image creation. Existing keys remain active when their key fields are left blank.</p>
+                <div class="provider-selectors">
+                  <label>
+                    Analyze products with
+                    <select id="analysisProvider">
+                      <option value="openai">OpenAI</option>
+                      <option value="google">Google Gemini</option>
+                    </select>
+                  </label>
+                  <label>
+                    Create product images with
+                    <select id="imageProvider">
+                      <option value="openai">OpenAI</option>
+                      <option value="google">Google Gemini</option>
+                      <option value="ideogram">Ideogram</option>
+                    </select>
+                  </label>
+                </div>
+                <section class="provider-config" aria-labelledby="openAiProviderTitle">
+                  <div class="provider-config-heading">
+                    <div>
+                      <span class="provider-mark openai">OA</span>
+                      <strong id="openAiProviderTitle">OpenAI</strong>
+                    </div>
+                    <span class="provider-state" id="openAiConfiguredState">Not configured</span>
+                  </div>
+                  <p class="field-note">Automatically loads <code>OPENAI_API_KEY</code> from <code>.env.local</code>.</p>
+                  <label>
+                    Add or replace OpenAI API key
+                    <input id="openAiApiKey" type="password" autocomplete="off" placeholder="sk-..." />
+                  </label>
+                  <div class="provider-models">
+                    <label>
+                      Analysis model
+                      <input id="openAiModel" value="gpt-5.4-mini" />
+                    </label>
+                    <label>
+                      Image model
+                      <input id="openAiImageModel" value="gpt-image-2" />
+                    </label>
+                  </div>
+                  <div class="button-grid">
+                    <a class="ghost-btn link-btn" href="https://platform.openai.com/account/rate-limits" target="_blank" rel="noreferrer">
+                      <span data-lucide="gauge"></span>
+                      API limits
+                    </a>
+                    <a class="ghost-btn link-btn" href="https://platform.openai.com/account/billing" target="_blank" rel="noreferrer">
+                      <span data-lucide="credit-card"></span>
+                      Billing
+                    </a>
+                  </div>
+                </section>
+                <section class="provider-config" aria-labelledby="googleProviderTitle">
+                  <div class="provider-config-heading">
+                    <div>
+                      <span class="provider-mark google">G</span>
+                      <strong id="googleProviderTitle">Google Gemini</strong>
+                    </div>
+                    <span class="provider-state" id="googleConfiguredState">Not configured</span>
+                  </div>
+                  <p class="field-note">Automatically loads <code>GEMINI_API_KEY</code> or <code>GOOGLE_API_KEY</code> from <code>.env.local</code>.</p>
+                  <label>
+                    Add or replace Google AI API key
+                    <input id="googleAiApiKey" type="password" autocomplete="off" placeholder="AIza..." />
+                  </label>
+                  <div class="provider-models">
+                    <label>
+                      Analysis model
+                      <input id="geminiModel" value="gemini-2.5-flash" />
+                    </label>
+                    <label>
+                      Image model
+                      <select id="geminiImageModel">
+                        <option value="gemini-3-pro-image-preview" selected>Gemini 3 Pro Image · Best quality</option>
+                        <option value="gemini-3.1-flash-image-preview">Gemini 3.1 Flash Image · Faster</option>
+                        <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image · Economy</option>
+                      </select>
+                    </label>
+                  </div>
+                  <a class="ghost-btn link-btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+                    <span data-lucide="key-round"></span>
+                    Get Google AI API key
+                  </a>
+                </section>
+                <section class="provider-config" aria-labelledby="ideogramProviderTitle">
+                  <div class="provider-config-heading">
+                    <div>
+                      <span class="provider-mark ideogram">ID</span>
+                      <strong id="ideogramProviderTitle">Ideogram</strong>
+                    </div>
+                    <span class="provider-state" id="ideogramConfiguredState">Not configured</span>
+                  </div>
+                  <p class="field-note">Image generation and reference-image editing only. Product analysis remains on OpenAI or Google Gemini. Automatically loads <code>IDEOGRAM_API_KEY</code> from <code>.env.local</code>.</p>
+                  <label>
+                    Add or replace Ideogram API key
+                    <input id="ideogramApiKey" type="password" autocomplete="off" placeholder="Ideogram API key" />
+                  </label>
+                  <div class="marketplace-note">
+                    <strong>Reference image edit</strong>
+                    <span>Uses the uploaded product image with a native 2:3 portrait request, then normalizes the result to 1200 × 1800 px.</span>
+                  </div>
+                  <a class="ghost-btn link-btn" href="https://ideogram.ai/manage-api" target="_blank" rel="noreferrer">
+                    <span data-lucide="key-round"></span>
+                    Manage Ideogram API
+                  </a>
+                </section>
+                <button class="primary-btn" type="submit">
+                  <span data-lucide="save"></span>
+                  Save AI providers
+                </button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+        <div class="image-lightbox hidden" id="imageLightbox" role="dialog" aria-modal="true" aria-labelledby="imageLightboxTitle">
+          <button class="lightbox-close" id="imageLightboxClose" type="button" aria-label="Close image preview">
+            <span data-lucide="x"></span>
+          </button>
+          <div class="lightbox-content">
+            <img id="imageLightboxImage" alt="" />
+            <div>
+              <strong id="imageLightboxTitle">Generated image</strong>
+              <span id="imageLightboxMeta">1200 × 1800 px</span>
+            </div>
+          </div>
+        </div>
+
+        <section class="ops-log" aria-label="Operation log">
+          <div>
+            <strong>Last operation</strong>
+            <span id="operationLog">Ready</span>
+          </div>
+          <div>
+            <strong>Last export</strong>
+            <span id="lastExportName">No export yet</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

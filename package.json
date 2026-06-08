@@ -1,0 +1,13 @@
+{
+  "name": "trendlift-ai-listings-optimizer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local Trendyol listing optimizer prototype with real account testing proxy.",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check app.js && node --check server.js"
+  },
+  "dependencies": {
+    "sharp": "^0.34.5"
+  }
+}

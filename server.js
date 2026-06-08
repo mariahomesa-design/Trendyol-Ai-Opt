@@ -1,0 +1,1500 @@
+const http = require("node:http");
+const fs = require("node:fs/promises");
+const path = require("node:path");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+
+let sharp;
+try {
+  sharp = require("sharp");
+} catch {
+  sharp = null;
+}
+const execFileAsync = promisify(execFile);
+
+try {
+  process.loadEnvFile(path.join(__dirname, ".env.local"));
+} catch {
+  // Local env file is optional when credentials are supplied by the shell.
+}
+
+const PORT = Number(process.env.PORT || 4173);
+const HOST = process.env.HOST || "0.0.0.0";
+const ROOT = __dirname;
+const EXPORT_DIR = "/Users/user/Documents/listing opt excel";
+let OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+let OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+let OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
+let GOOGLE_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+let GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+let GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
+let IDEOGRAM_API_KEY = process.env.IDEOGRAM_API_KEY || "";
+let AI_ANALYSIS_PROVIDER = process.env.AI_ANALYSIS_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
+let AI_IMAGE_PROVIDER = process.env.AI_IMAGE_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
+const GENERATED_DIR = path.join(ROOT, "generated");
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml"
+};
+
+const session = {
+  sellerId: process.env.TRENDYOL_SELLER_ID || "",
+  apiKey: process.env.TRENDYOL_API_KEY || "",
+  apiSecret: process.env.TRENDYOL_API_SECRET || "",
+  environment: process.env.TRENDYOL_ENV || "prod",
+  storeFrontCode: process.env.TRENDYOL_STOREFRONT_CODE || "SA"
+};
+
+function rootUrl() {
+  return session.environment === "stage"
+    ? "https://stageapigw.trendyol.com"
+    : "https://apigw.trendyol.com";
+}
+
+function authHeader() {
+  return `Basic ${Buffer.from(`${session.apiKey}:${session.apiSecret}`).toString("base64")}`;
+}
+
+function hasCredentials() {
+  return Boolean(session.sellerId && session.apiKey && session.apiSecret);
+}
+
+function publicBaseUrl(req) {
+  const configured = String(process.env.PUBLIC_BASE_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const railwayDomain = String(process.env.RAILWAY_PUBLIC_DOMAIN || "").trim();
+  if (railwayDomain) return `https://${railwayDomain}`.replace(/\/+$/, "");
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const forwardedHost = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  if (forwardedProto === "https" && forwardedHost && !/^(localhost|127\.0\.0\.1)(:|$)/i.test(forwardedHost)) {
+    return `https://${forwardedHost}`;
+  }
+  return "";
+}
+
+function generatedPublicUrl(req, image) {
+  if (/^https:\/\//i.test(String(image || ""))) return image;
+  const base = publicBaseUrl(req);
+  return base && String(image || "").startsWith("/") ? `${base}${image}` : "";
+}
+
+function friendlyOpenAiError(message) {
+  const text = String(message || "");
+  if (/rate limit reached|requests per day|rpd/i.test(text)) {
+    const reset = text.match(/try again in\s+([^.\n]+)/i)?.[1];
+    return `Daily OpenAI request limit reached.${reset ? ` Try again in ${reset}.` : ""} The app paused to avoid wasting requests.`;
+  }
+  if (/billing hard limit|quota|insufficient_quota/i.test(text)) {
+    return "OpenAI project billing limit reached. Increase the project budget or add API credits, then try again.";
+  }
+  return text;
+}
+
+function friendlyGoogleAiError(message) {
+  const text = String(message || "");
+  if (/high demand|overload|temporar|service unavailable/i.test(text)) {
+    return "Gemini image generation is temporarily busy. The app retried automatically; please try again shortly.";
+  }
+  if (/resource_exhausted|quota|rate limit|too many requests/i.test(text)) {
+    return "Google AI request limit reached. Check the Gemini API quota, billing, or retry later.";
+  }
+  if (/api key not valid|invalid api key|permission_denied|unauthenticated/i.test(text)) {
+    return "Google AI API key was rejected. Check the key in Google AI Studio and try again.";
+  }
+  return text;
+}
+
+function friendlyIdeogramError(message) {
+  const text = String(message || "");
+  if (/rate limit|too many requests|service unavailable|temporar/i.test(text)) {
+    return "Ideogram image generation is temporarily busy or rate limited. Please retry shortly.";
+  }
+  if (/unauthorized|forbidden|api.?key|authentication/i.test(text)) {
+    return "Ideogram API key was rejected. Check the API key in your Ideogram account.";
+  }
+  if (/payment|required|credit|billing/i.test(text)) {
+    return "Ideogram API credits or billing are required. Ideogram subscriptions and API billing are separate.";
+  }
+  return text;
+}
+
+function providerKey(provider) {
+  if (provider === "google") return GOOGLE_API_KEY;
+  if (provider === "ideogram") return IDEOGRAM_API_KEY;
+  return OPENAI_API_KEY;
+}
+
+function providerLabel(provider) {
+  if (provider === "google") return "Google Gemini";
+  if (provider === "ideogram") return "Ideogram";
+  return "OpenAI";
+}
+
+async function requestJson(req) {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  if (!chunks.length) return {};
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+function sendJson(res, statusCode, payload) {
+  res.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS"
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  })[char]);
+}
+
+function excelHtml(rows) {
+  const headers = Object.keys(rows[0] || {});
+  return `
+    <html>
+      <head><meta charset="UTF-8" /></head>
+      <body>
+        <table>
+          <thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>
+          <tbody>
+            ${rows.map((row) => `<tr>${headers.map((header) => `<td>${escapeHtml(row[header])}</td>`).join("")}</tr>`).join("")}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
+function safeFilename(filename) {
+  return String(filename || "TrendLift_export.xls")
+    .replace(/[/:*?"<>|\\]/g, "-")
+    .replace(/\s+/g, "_")
+    .slice(0, 160);
+}
+
+function storefrontCandidates() {
+  if (session.storeFrontCode) return [session.storeFrontCode];
+  return ["", "TR", "SA", "AE", "KW", "QA", "BH", "OM", "DE", "RO", "GR"];
+}
+
+async function trendyolFetch(endpoint, options = {}) {
+  if (!hasCredentials()) {
+    const error = new Error("Missing Trendyol credentials. Add them in Settings first.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const response = await fetch(`${rootUrl()}${endpoint}`, {
+    ...options,
+    headers: {
+      Authorization: authHeader(),
+      "Content-Type": "application/json",
+      "User-Agent": `${session.sellerId} - SelfIntegration`,
+      ...(options.storeFrontCode ? { storeFrontCode: options.storeFrontCode } : {}),
+      ...(options.acceptLanguage ? { "Accept-Language": options.acceptLanguage } : {}),
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  let body = {};
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { raw: text };
+  }
+  if (!response.ok) {
+    const error = new Error(body.message || body.error || `Trendyol API returned ${response.status}`);
+    error.statusCode = response.status;
+    error.body = body;
+    throw error;
+  }
+  return body;
+}
+
+async function optimizeWithImage(listing) {
+  if (!providerKey(AI_ANALYSIS_PROVIDER)) {
+    const error = new Error(`${providerLabel(AI_ANALYSIS_PROVIDER)} image analysis is not configured. Add its API key in Settings.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const outputLanguage = listing.outputLanguage === "ar" ? "Arabic" : "English";
+  const prompt = [
+    "Inspect the image first. Identify the actual physical product.",
+    "Compare it with the current title and description and flag any mismatch.",
+    `Create one accurate ${outputLanguage} Trendyol Saudi Arabia product title and description for the product visible in the image.`,
+    `Write the title, description, warning, detected product type and keywords in ${outputLanguage}.`,
+    "The target marketplace is Saudi Arabia. Use natural Saudi marketplace wording and do not mention another marketplace or currency.",
+    "Use only facts visible in the supplied listing fields and image.",
+    "Never describe a different product type.",
+    "Ignore any title, description, category, attribute or keyword that conflicts with the product visible in the image.",
+    "Never include marketplace identifiers or system fields such as productMainId, contentId, variantId, barcode, stock code, model code, category ID or brand ID.",
+    "Write natural customer-facing copy. Do not repeat awkward keyword phrases.",
+    "The title must be between 90 and 100 characters, targeting as close to 100 characters as natural wording allows. Never exceed 100 characters.",
+    "The description must be detailed and between 600 and 1000 characters, written as useful customer-facing paragraphs.",
+    "The title must name the visible product clearly. The description must explain visible design, color, material, storage, shape and suitable use only when supported by the image.",
+    "Return 5 concise customer search terms that describe the visible product in the requested language.",
+    "Return a comprehensive bilingual attributes array using only details visible in the image. Include English and Arabic names and values for useful fields such as color, material, style, finish, shape, room or use, pattern, adjustable features, storage features and approximate dimensions only when visually supportable.",
+    "Do not mention SEO, optimization, keywords, search volume, AI, or the listing process.",
+    "Naturally include only relevant supplied keywords.",
+    `Current title: ${listing.title || ""}`,
+    `Current description: ${listing.description || ""}`,
+    `Brand: ${listing.brand || ""}`,
+    `Category: ${listing.category || ""}`,
+    `Visible product attributes: ${JSON.stringify({
+      color: listing.metadata?.color || "",
+      material: listing.metadata?.material || "",
+      size: listing.metadata?.size || ""
+    })}`,
+    `Relevant keyword candidates: ${(listing.keywords || []).map((keyword) => keyword.term).join(", ")}`,
+    'Return only JSON: {"detectedProductType":"...","suggestedCategory":"...","mismatch":true,"warning":"...","title":"...","description":"...","color":"...","material":"...","keywords":["..."],"attributes":[{"attributeName":"...","attributeNameAr":"...","customAttributeValue":"...","customAttributeValueAr":"..."}]}'
+  ].join("\n");
+  let result = await requestStructuredAnalysis(prompt, listing.image);
+  result = normalizeAnalysisResult(result);
+
+  for (let attempt = 0; attempt < 4 && analysisValidationError(result); attempt += 1) {
+    const repairPrompt = [
+      `Rewrite this ${outputLanguage} Saudi marketplace listing while preserving the identified product facts.`,
+      "Return the same JSON keys only.",
+      "The title MUST contain 90-100 characters, including spaces, and should naturally approach 100 characters.",
+      "The description MUST contain 600-1000 characters and use useful customer-facing paragraphs.",
+      "Keep five concise product search terms.",
+      "Keep a complete attributes array containing only visible product facts.",
+      "Do not include IDs, barcode, stock code, model code, SEO commentary, or unsupported product claims.",
+      `Validation problem: ${analysisValidationError(result)}`,
+      `Draft JSON: ${JSON.stringify(result)}`,
+      'Return only JSON: {"detectedProductType":"...","suggestedCategory":"...","mismatch":true,"warning":"...","title":"...","description":"...","color":"...","material":"...","keywords":["..."],"attributes":[{"attributeName":"...","attributeNameAr":"...","customAttributeValue":"...","customAttributeValueAr":"..."}]}'
+    ].join("\n");
+    result = normalizeAnalysisResult(await requestStructuredAnalysis(repairPrompt, listing.image));
+  }
+
+  const validationError = analysisValidationError(result);
+  if (validationError) throw new Error(`Image analysis could not prepare valid listing copy: ${validationError}`);
+  return result;
+}
+
+async function requestStructuredAnalysis(prompt, image) {
+  if (AI_ANALYSIS_PROVIDER === "google") {
+    return requestGeminiStructuredAnalysis(prompt, image);
+  }
+  return requestOpenAiStructuredAnalysis(prompt, image);
+}
+
+async function requestOpenAiStructuredAnalysis(prompt, image) {
+  const content = [{ type: "input_text", text: prompt }];
+  if (image) content.push({ type: "input_image", image_url: image });
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      input: [{ role: "user", content }]
+    })
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    const error = new Error(friendlyOpenAiError(body.error?.message || `OpenAI returned ${response.status}`));
+    error.statusCode = response.status;
+    error.provider = "openai";
+    throw error;
+  }
+  const text = (body.output || [])
+    .flatMap((item) => item.content || [])
+    .find((item) => item.type === "output_text")?.text || "";
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Image-aware AI returned an invalid response.");
+  return JSON.parse(match[0]);
+}
+
+async function imageToGeminiPart(image) {
+  const dataMatch = String(image || "").match(/^data:(image\/(?:png|jpeg|webp|heic|heif));base64,(.+)$/i);
+  if (dataMatch) {
+    return { inline_data: { mime_type: dataMatch[1].toLowerCase(), data: dataMatch[2] } };
+  }
+  if (!/^https?:\/\//i.test(String(image || ""))) {
+    throw new Error("Google AI requires a valid uploaded image or public image URL.");
+  }
+  const response = await fetch(image);
+  if (!response.ok) throw new Error(`Could not download the product image (${response.status}).`);
+  const mimeType = String(response.headers.get("content-type") || "image/jpeg").split(";")[0];
+  if (!/^image\/(png|jpeg|webp|heic|heif)$/i.test(mimeType)) {
+    throw new Error("The product image format is not supported by Google AI.");
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > 18 * 1024 * 1024) throw new Error("The product image is too large for inline Google AI analysis.");
+  return { inline_data: { mime_type: mimeType, data: bytes.toString("base64") } };
+}
+
+async function requestGeminiStructuredAnalysis(prompt, image) {
+  const parts = [{ text: prompt }];
+  if (image) parts.unshift(await imageToGeminiPart(image));
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": GOOGLE_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseMimeType: "application/json" }
+      })
+    }
+  );
+  const body = await response.json();
+  if (!response.ok) {
+    const error = new Error(friendlyGoogleAiError(body.error?.message || `Google AI returned ${response.status}`));
+    error.statusCode = response.status;
+    error.provider = "google";
+    throw error;
+  }
+  const text = (body.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("");
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("Google AI returned an invalid product-analysis response.");
+  return JSON.parse(match[0]);
+}
+
+function normalizeAnalysisResult(value) {
+  const result = { ...value };
+  result.title = sanitizeGeneratedCopy(result.title).slice(0, 100).trim();
+  result.description = sanitizeGeneratedCopy(result.description);
+  result.warning = sanitizeGeneratedCopy(result.warning);
+  result.detectedProductType = sanitizeGeneratedCopy(result.detectedProductType);
+  result.suggestedCategory = sanitizeGeneratedCopy(result.suggestedCategory);
+  result.keywords = Array.isArray(result.keywords)
+    ? result.keywords.map(sanitizeGeneratedCopy).filter(Boolean)
+    : [];
+  result.attributes = Array.isArray(result.attributes)
+    ? result.attributes
+      .map((attribute) => ({
+        attributeName: sanitizeGeneratedCopy(attribute?.attributeName),
+        attributeNameAr: sanitizeGeneratedCopy(attribute?.attributeNameAr),
+        customAttributeValue: sanitizeGeneratedCopy(attribute?.customAttributeValue),
+        customAttributeValueAr: sanitizeGeneratedCopy(attribute?.customAttributeValueAr)
+      }))
+      .filter((attribute) => attribute.attributeName && attribute.customAttributeValue)
+    : [];
+  return result;
+}
+
+function analysisValidationError(result) {
+  if (!result.title || !result.description || containsTechnicalIdentifier(result.title) || containsTechnicalIdentifier(result.description)) {
+    return "the generated copy was empty or contained marketplace system identifiers";
+  }
+  if (result.title.length > 100) {
+    return `the title was ${result.title.length} characters and exceeded the 100-character maximum`;
+  }
+  if (result.description.length < 500) {
+    return `the description was ${result.description.length} characters instead of at least 500`;
+  }
+  if (!result.keywords.length) return "no product search terms were returned";
+  return "";
+}
+
+function containsTechnicalIdentifier(value) {
+  return /\b(product\s*main\s*id|productmainid|content\s*id|variant\s*id|category\s*id|brand\s*id|stock\s*code|model\s*code|barcode)\b/i.test(String(value || ""));
+}
+
+function sanitizeGeneratedCopy(value) {
+  return String(value || "")
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !containsTechnicalIdentifier(sentence))
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function flattenCategories(categories, parentPath = []) {
+  return (Array.isArray(categories) ? categories : []).flatMap((category) => {
+    const name = String(category.name || category.categoryName || "").trim();
+    const pathParts = [...parentPath, name].filter(Boolean);
+    const children = category.subCategories || category.children || [];
+    const current = [{
+      id: Number(category.id || category.categoryId),
+      name,
+      path: pathParts.join(" > "),
+      leaf: !children.length
+    }];
+    return [...current, ...flattenCategories(children, pathParts)];
+  });
+}
+
+function categoryMatchScore(category, query) {
+  const queryWords = String(query || "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length > 2);
+  const text = `${category.name} ${category.path}`.toLowerCase();
+  return queryWords.reduce((score, word) => score + (text.includes(word) ? 4 : 0), 0)
+    + (text.includes(String(query || "").toLowerCase()) ? 10 : 0)
+    + (category.leaf ? 2 : 0);
+}
+
+function normalizedAttributeText(value) {
+  return String(value || "")
+    .normalize("NFKD")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function fetchCategoryAttributes(categoryId) {
+  if (!Number(categoryId)) return [];
+  const body = await trendyolFetch(`/integration/product/product-categories/${categoryId}/attributes`, {
+    method: "GET",
+    storeFrontCode: session.storeFrontCode,
+    acceptLanguage: "en"
+  });
+  return body.categoryAttributes || body.attributes || body.content || [];
+}
+
+function categoryAttributeId(entry) {
+  return Number(entry.attribute?.id || entry.attributeId || entry.id);
+}
+
+function categoryAttributeName(entry) {
+  return String(entry.attribute?.name || entry.name || entry.attributeName || "").trim();
+}
+
+function categoryAttributeRequired(entry) {
+  const value = entry.required ?? entry.mandatory ?? entry.isRequired;
+  return value === true || value === 1 || String(value).toLowerCase() === "true";
+}
+
+function categoryAttributeValues(entry) {
+  return entry.attributeValues || entry.values || [];
+}
+
+function unresolvedRequiredAttributes(categoryAttributes, resolved) {
+  const resolvedIds = new Set(resolved.map((attribute) => Number(attribute.attributeId)));
+  return categoryAttributes
+    .filter((entry) => categoryAttributeRequired(entry) && !resolvedIds.has(categoryAttributeId(entry)))
+    .map((entry) => ({
+      attributeId: categoryAttributeId(entry),
+      name: categoryAttributeName(entry),
+      allowCustom: Boolean(entry.allowCustom || entry.allowCustomValue),
+      values: categoryAttributeValues(entry).slice(0, 100).map((value) => ({
+        id: Number(value.id || value.attributeValueId),
+        name: String(value.name || value.value || value.attributeValue || "").trim()
+      })).filter((value) => value.id && value.name)
+    }));
+}
+
+function mergeResolvedAttributes(...groups) {
+  const merged = new Map();
+  groups.flat().forEach((attribute) => {
+    const attributeId = Number(attribute?.attributeId);
+    if (!attributeId) return;
+    if (!Number(attribute.attributeValueId) && !String(attribute.customAttributeValue || "").trim()) return;
+    merged.set(attributeId, {
+      attributeId,
+      ...(Number(attribute.attributeValueId)
+        ? { attributeValueId: Number(attribute.attributeValueId) }
+        : { customAttributeValue: String(attribute.customAttributeValue).trim() })
+    });
+  });
+  return [...merged.values()];
+}
+
+async function resolveCategoryAttributes(categoryId, suppliedAttributes, categoryAttributes = null) {
+  const attributes = Array.isArray(suppliedAttributes) ? suppliedAttributes : [];
+  const alreadyResolved = attributes.filter((attribute) => Number(attribute?.attributeId));
+  const aiAttributes = attributes.filter((attribute) =>
+    !Number(attribute?.attributeId) && attribute?.attributeName && attribute?.customAttributeValue
+  );
+  if (!aiAttributes.length || !hasCredentials()) return mergeResolvedAttributes(alreadyResolved);
+  const availableAttributes = categoryAttributes || await fetchCategoryAttributes(categoryId);
+  const resolved = [...alreadyResolved];
+
+  for (const aiAttribute of aiAttributes) {
+    const requestedName = normalizedAttributeText(aiAttribute.attributeName);
+    const requestedValue = normalizedAttributeText(aiAttribute.customAttributeValue);
+    const categoryAttribute = availableAttributes.find((entry) => {
+      const name = normalizedAttributeText(entry.attribute?.name || entry.name || entry.attributeName);
+      return name === requestedName || name.includes(requestedName) || requestedName.includes(name);
+    });
+    if (!categoryAttribute) continue;
+    const attributeId = Number(categoryAttribute.attribute?.id || categoryAttribute.attributeId || categoryAttribute.id);
+    if (!attributeId) continue;
+    const values = categoryAttributeValues(categoryAttribute);
+    const matchedValue = values.find((entry) => {
+      const value = normalizedAttributeText(entry.name || entry.value || entry.attributeValue);
+      return value === requestedValue || value.includes(requestedValue) || requestedValue.includes(value);
+    });
+    if (matchedValue) {
+      resolved.push({
+        attributeId,
+        attributeValueId: Number(matchedValue.id || matchedValue.attributeValueId)
+      });
+    } else if (categoryAttribute.allowCustom || categoryAttribute.allowCustomValue) {
+      resolved.push({
+        attributeId,
+        customAttributeValue: String(aiAttribute.customAttributeValue).trim()
+      });
+    }
+  }
+  return mergeResolvedAttributes(resolved);
+}
+
+async function prepareCategoryAttributes(categoryId, suppliedAttributes, image, productContext = {}) {
+  const categoryAttributes = await fetchCategoryAttributes(categoryId);
+  let resolved = await resolveCategoryAttributes(categoryId, suppliedAttributes, categoryAttributes);
+  let missing = unresolvedRequiredAttributes(categoryAttributes, resolved);
+
+  let aiWarning = "";
+  if (missing.length && image && providerKey(AI_ANALYSIS_PROVIDER)) {
+    const schema = missing.map((attribute) => ({
+      attributeId: attribute.attributeId,
+      name: attribute.name,
+      allowCustom: attribute.allowCustom,
+      allowedValues: attribute.values
+    }));
+    try {
+      const result = await requestStructuredAnalysis([
+        "Inspect the product image and complete the mandatory Trendyol category attributes.",
+        "Choose only an allowed attributeValueId from the supplied schema when allowed values exist.",
+        "Use customAttributeValue only when allowCustom is true.",
+        "Do not invent dimensions, certifications, warranty, age, gender, origin, or materials that cannot be supported by the image or supplied product details.",
+        "Omit an attribute when there is not enough evidence. The app will ask the seller to complete it.",
+        `Product title: ${productContext.title || ""}`,
+        `Product description: ${productContext.description || ""}`,
+        `Detected product type: ${productContext.productType || ""}`,
+        `Mandatory attribute schema: ${JSON.stringify(schema)}`,
+        'Return only JSON: {"attributes":[{"attributeId":123,"attributeValueId":456},{"attributeId":789,"customAttributeValue":"value"}]}'
+      ].join("\n"), image);
+
+      const allowedById = new Map(missing.map((attribute) => [attribute.attributeId, attribute]));
+      const aiResolved = (Array.isArray(result.attributes) ? result.attributes : []).flatMap((attribute) => {
+        const attributeId = Number(attribute.attributeId);
+        const schemaAttribute = allowedById.get(attributeId);
+        if (!schemaAttribute) return [];
+        const attributeValueId = Number(attribute.attributeValueId);
+        if (attributeValueId && schemaAttribute.values.some((value) => value.id === attributeValueId)) {
+          return [{ attributeId, attributeValueId }];
+        }
+        const customAttributeValue = String(attribute.customAttributeValue || "").trim();
+        if (customAttributeValue && schemaAttribute.allowCustom) {
+          return [{ attributeId, customAttributeValue }];
+        }
+        return [];
+      });
+      resolved = mergeResolvedAttributes(resolved, aiResolved);
+      missing = unresolvedRequiredAttributes(categoryAttributes, resolved);
+    } catch (error) {
+      aiWarning = error.message || "AI could not complete category attributes.";
+    }
+  }
+
+  return {
+    attributes: resolved,
+    missingRequiredAttributes: missing.map(({ attributeId, name, allowCustom, values }) => ({
+      attributeId,
+      name,
+      allowCustom,
+      values: values.slice(0, 20)
+    })),
+    requiredCount: categoryAttributes.filter(categoryAttributeRequired).length,
+    aiWarning
+  };
+}
+
+async function analyzeNewProductImage(image, outputLanguage = "en") {
+  return optimizeWithImage({
+    title: "",
+    description: "",
+    brand: "",
+    category: "",
+    metadata: {},
+    keywords: [],
+    image,
+    outputLanguage
+  });
+}
+
+function dataUrlToBlob(dataUrl) {
+  const match = String(dataUrl).match(/^data:(.+?);base64,(.+)$/);
+  if (!match) throw new Error("Invalid uploaded image.");
+  return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
+}
+
+const PRODUCT_IMAGE_SCENES = {
+  hero: {
+    label: "Hero lifestyle image",
+    prompt: "Create the main premium marketplace hero photograph. Place the exact reference product naturally in an appropriate upscale Saudi home interior as the clear visual focus. Use believable interior scale, editorial furniture photography, realistic soft daylight, accurate contact shadows, detailed materials, restrained styling and generous clean space. No people, no text, no extra logos."
+  },
+  lifestyle: {
+    label: "Lifestyle image",
+    prompt: "Create a second premium lifestyle photograph showing the exact reference product in believable everyday use. Choose a natural setting appropriate to the item. If a person is useful for scale, show only one natural, anatomically correct adult interacting realistically with the product. Use professional commercial photography, accurate perspective, crisp product detail, realistic lighting and no text or extra logos."
+  },
+  features: {
+    label: "Bilingual features image",
+    prompt: "Create a polished premium product feature image with a clean editorial infographic layout. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio background. Show only clearly visible features using short, perfectly legible labels in both English and Arabic. Use refined typography, clean leader lines and balanced spacing.",
+    geminiPrompt: "Create a clean premium product feature layout. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
+  },
+  angles: {
+    label: "Four angles and size image",
+    prompt: "Create a high-end catalog contact sheet with four consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Add restrained, perfectly legible approximate dimension labels in English and Arabic.",
+    geminiPrompt: "Create a high-end catalog contact sheet with four consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
+  },
+  white: {
+    label: "Pure white background image",
+    prompt: "Create a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text and no extra logos."
+  }
+};
+
+async function generateProductImage({ image, productType, title, scene, customPrompt }) {
+  if (!providerKey(AI_IMAGE_PROVIDER)) {
+    const error = new Error(`${providerLabel(AI_IMAGE_PROVIDER)} image generation is not configured. Add its API key in Settings.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const sceneConfig = PRODUCT_IMAGE_SCENES[scene];
+  if (!sceneConfig) {
+    const error = new Error("Unknown product image scene.");
+    error.statusCode = 400;
+    throw error;
+  }
+  const prompt = [
+    `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
+    "The uploaded product is the immutable source of truth.",
+    "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
+    "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
+    "Do not duplicate the product unless the requested four-angle contact sheet explicitly requires multiple consistent views.",
+    "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
+    "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
+    "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
+    AI_IMAGE_PROVIDER === "google" && sceneConfig.geminiPrompt ? sceneConfig.geminiPrompt : sceneConfig.prompt,
+    customPrompt ? `Additional seller direction: ${String(customPrompt).slice(0, 1000)}` : ""
+  ].filter(Boolean).join(" ");
+  if (AI_IMAGE_PROVIDER === "google") {
+    return generateGeminiProductImage({ image, prompt, sceneConfig, scene });
+  }
+  if (AI_IMAGE_PROVIDER === "ideogram") {
+    return generateIdeogramProductImage({ image, prompt, sceneConfig, scene });
+  }
+  return generateOpenAiProductImage({ image, prompt, sceneConfig, scene });
+}
+
+async function generateOpenAiProductImage({ image, prompt, sceneConfig, scene }) {
+  const form = new FormData();
+  form.append("model", OPENAI_IMAGE_MODEL);
+  form.append("image", dataUrlToBlob(image), "product.png");
+  form.append("prompt", prompt);
+  form.append("n", "1");
+  form.append("size", "1024x1536");
+  form.append("quality", "high");
+  // GPT Image 2 preserves reference images without accepting the legacy
+  // input_fidelity field on the image edits endpoint.
+  if (!/^gpt-image-2(?:$|-)/i.test(OPENAI_IMAGE_MODEL)) {
+    form.append("input_fidelity", "high");
+  }
+  form.append("output_format", "png");
+  const response = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: form
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    const error = new Error(friendlyOpenAiError(body.error?.message || `OpenAI image API returned ${response.status}`));
+    error.statusCode = response.status;
+    error.provider = "openai";
+    throw error;
+  }
+  await fs.mkdir(GENERATED_DIR, { recursive: true });
+  const item = body.data?.[0];
+  if (!item) throw new Error("OpenAI did not return a generated image.");
+  let imageBuffer;
+  if (item.url) {
+    const imageResponse = await fetch(item.url);
+    if (!imageResponse.ok) throw new Error("Could not download the generated OpenAI image.");
+    imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
+  } else if (item.b64_json) {
+    imageBuffer = Buffer.from(item.b64_json, "base64");
+  } else {
+    throw new Error("OpenAI returned an unsupported image response.");
+  }
+  return saveGeneratedPortrait(imageBuffer, sceneConfig.label, scene);
+}
+
+async function generateGeminiProductImage({ image, prompt, sceneConfig, scene }) {
+  const imagePart = await imageToGeminiPart(image);
+  const preferredModel = GEMINI_IMAGE_MODEL;
+  const fallbackModel = preferredModel === "gemini-3-pro-image-preview"
+    ? "gemini-3.1-flash-image-preview"
+    : "";
+  let body;
+  let modelUsed = preferredModel;
+  let usedFallback = false;
+
+  try {
+    body = await requestGeminiImageWithRetry(preferredModel, imagePart, prompt);
+  } catch (error) {
+    if (!fallbackModel || !error.temporaryOverload) throw error;
+    modelUsed = fallbackModel;
+    usedFallback = true;
+    body = await requestGeminiImageWithRetry(fallbackModel, imagePart, prompt, 2);
+  }
+  const imageResult = (body.candidates?.[0]?.content?.parts || []).find((part) => part.inlineData || part.inline_data);
+  const inlineData = imageResult?.inlineData || imageResult?.inline_data;
+  if (!inlineData?.data) throw new Error("Google AI did not return a generated image.");
+  return {
+    ...await saveGeneratedPortrait(Buffer.from(inlineData.data, "base64"), sceneConfig.label, scene),
+    modelUsed,
+    usedFallback
+  };
+}
+
+async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "x-goog-api-key": GOOGLE_API_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }, imagePart] }],
+          generationConfig: {
+            responseModalities: ["IMAGE"],
+            imageConfig: {
+              aspectRatio: "2:3",
+              imageSize: /^gemini-3/i.test(model) ? "4K" : undefined
+            }
+          }
+        })
+      }
+    );
+    const body = await response.json();
+    if (response.ok) return body;
+
+    const rawMessage = body.error?.message || `Google AI image API returned ${response.status}`;
+    const temporaryOverload = response.status === 503 || /high demand|overload|temporar|unavailable/i.test(rawMessage);
+    lastError = new Error(friendlyGoogleAiError(rawMessage));
+    lastError.statusCode = response.status;
+    lastError.provider = "google";
+    lastError.temporaryOverload = temporaryOverload;
+    if (!temporaryOverload || attempt === maxAttempts) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 2500));
+  }
+  throw lastError;
+}
+
+async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene }) {
+  const form = new FormData();
+  form.append("images", dataUrlToBlob(image), "product.png");
+  form.append("prompt", prompt);
+  form.append("num_images", "1");
+  form.append("aspect_ratio", "2x3");
+  form.append("magic_prompt", "AUTO");
+  form.append("transparent_background", "false");
+  const response = await fetch("https://api.ideogram.ai/v1/edit", {
+    method: "POST",
+    headers: { "Api-Key": IDEOGRAM_API_KEY },
+    body: form
+  });
+  const body = await response.json();
+  if (!response.ok) {
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((item) => item.msg || item.message || "").filter(Boolean).join("; ")
+      : body.detail;
+    const error = new Error(friendlyIdeogramError(body.error || detail || body.message || `Ideogram returned ${response.status}`));
+    error.statusCode = response.status;
+    error.provider = "ideogram";
+    throw error;
+  }
+  const imageUrl = body.data?.[0]?.url;
+  if (!imageUrl) throw new Error("Ideogram did not return a generated image.");
+  const imageResponse = await fetch(imageUrl);
+  if (!imageResponse.ok) throw new Error("Could not download the generated Ideogram image.");
+  return {
+    ...await saveGeneratedPortrait(Buffer.from(await imageResponse.arrayBuffer()), sceneConfig.label, scene),
+    modelUsed: "ideogram-edit",
+    usedFallback: false
+  };
+}
+
+async function saveGeneratedPortrait(imageBuffer, label, scene) {
+  await fs.mkdir(GENERATED_DIR, { recursive: true });
+  const filename = `product-${scene}-${Date.now()}.png`;
+  const filePath = path.join(GENERATED_DIR, filename);
+  if (sharp) {
+    await sharp(imageBuffer)
+      .rotate()
+      .resize(1200, 1800, {
+        fit: "cover",
+        position: "centre"
+      })
+      .png({ quality: 95, compressionLevel: 8 })
+      .toFile(filePath);
+  } else if (process.platform === "darwin") {
+    const sourcePath = path.join(GENERATED_DIR, `source-${scene}-${Date.now()}.png`);
+    const resizedPath = path.join(GENERATED_DIR, `resized-${scene}-${Date.now()}.png`);
+    await fs.writeFile(sourcePath, imageBuffer);
+    try {
+      await execFileAsync("/usr/bin/sips", ["-Z", "1800", sourcePath, "--out", resizedPath]);
+      await execFileAsync("/usr/bin/sips", ["-c", "1800", "1200", resizedPath, "--out", filePath]);
+    } finally {
+      await fs.unlink(sourcePath).catch(() => {});
+      await fs.unlink(resizedPath).catch(() => {});
+    }
+  } else {
+    throw new Error("Image resizing is unavailable. Install project dependencies and redeploy.");
+  }
+  return {
+    image: `/generated/${filename}`,
+    label,
+    scene,
+    width: 1200,
+    height: 1800
+  };
+}
+
+function productItemsFromBody(body) {
+  return body.content || body.items || body.products || [];
+}
+
+function endpointWithPage(endpoint, page) {
+  const [pathname, query = ""] = endpoint.split("?");
+  const params = new URLSearchParams(query);
+  params.set("page", String(page));
+  return `${pathname}?${params}`;
+}
+
+function dedupeProducts(items) {
+  const seen = new Set();
+  const deduped = [];
+  for (const item of items) {
+    const variants = Array.isArray(item.variants) ? item.variants : [item];
+    const variantKeys = variants.map((variant) => variant.variantId || variant.barcode || variant.stockCode).filter(Boolean);
+    const key = item.contentId || item.id || item.listingId || item.barcode || variantKeys.join("|") || JSON.stringify(item).slice(0, 120);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
+  }
+  return deduped;
+}
+
+async function fetchRemainingPages(firstResult, size) {
+  const totalPages = Number(firstResult.body.totalPages || 1);
+  const firstPage = Number(firstResult.body.page || 0);
+  const pagesToFetch = [];
+  for (let page = firstPage + 1; page < totalPages; page += 1) {
+    pagesToFetch.push(page);
+  }
+  if (!pagesToFetch.length) return firstResult;
+
+  const allItems = [...firstResult.items];
+  for (const page of pagesToFetch) {
+    const endpoint = endpointWithPage(firstResult.endpoint, page);
+    const body = await trendyolFetch(endpoint, {
+      storeFrontCode: firstResult.storeFrontCode,
+      acceptLanguage: ["SA", "AE", "KW", "QA", "BH", "OM"].includes(firstResult.storeFrontCode) ? "en" : undefined
+    });
+    allItems.push(...productItemsFromBody(body));
+  }
+
+  return {
+    ...firstResult,
+    items: allItems,
+    body: {
+      ...firstResult.body,
+      content: allItems,
+      size: Number(size),
+      fetchedPages: totalPages,
+      totalElements: firstResult.body.totalElements || allItems.length
+    }
+  };
+}
+
+async function fetchProducts({ state = "approved", size = "50", page = "0", nextPageToken = "", paginate = true } = {}) {
+  if (state === "all") {
+    const approved = await fetchProducts({ state: "approved", size, page, nextPageToken, paginate });
+    const unapproved = await fetchProducts({ state: "unapproved", size, page, nextPageToken, paginate });
+    const items = dedupeProducts([...approved.items, ...unapproved.items]);
+    const storeFrontCode = approved.storeFrontCode || unapproved.storeFrontCode || "";
+    return {
+      body: {
+        totalElements: items.length,
+        totalElementsReported: (approved.body.totalElements || 0) + (unapproved.body.totalElements || 0),
+        content: items,
+        diagnostics: [...(approved.body.diagnostics || []), ...(unapproved.body.diagnostics || [])]
+      },
+      endpoint: "combined approved + unapproved product sync",
+      storeFrontCode,
+      items
+    };
+  }
+
+  const suffix = state === "unapproved" ? "unapproved" : "approved";
+  const statusValues = state === "approved" ? ["", "onSale", "notOnSale", "archived", "locked", "blacklisted"] : [""];
+  if (nextPageToken) {
+    // nextPageToken is only meaningful for the V2 endpoints.
+  }
+
+  const endpoints = [];
+  for (const status of statusValues) {
+    const v2Params = new URLSearchParams({ size, page, supplierId: session.sellerId });
+    const v2BasicParams = new URLSearchParams({ size, page });
+    if (nextPageToken) {
+      v2Params.set("nextPageToken", nextPageToken);
+      v2BasicParams.set("nextPageToken", nextPageToken);
+    }
+    if (status) {
+      v2Params.set("status", status);
+      v2BasicParams.set("status", status);
+    }
+    endpoints.push(`/integration/product/sellers/${session.sellerId}/products/${suffix}?${v2Params}`);
+    endpoints.push(`/integration/product/sellers/${session.sellerId}/products/${suffix}?${v2BasicParams}`);
+  }
+
+  const v1Params = new URLSearchParams({ size, page });
+  if (state === "approved") v1Params.set("approved", "true");
+  if (state === "unapproved") v1Params.set("approved", "false");
+  endpoints.push(`/integration/product/sellers/${session.sellerId}/products?${v1Params}`);
+  endpoints.push(`/integration/product/sellers/${session.sellerId}/products?size=${size}&page=${page}`);
+
+  const failures = [];
+  const emptySuccesses = [];
+
+  for (const storeFrontCode of storefrontCandidates()) {
+    for (const endpoint of endpoints) {
+    try {
+      const body = await trendyolFetch(endpoint, {
+        storeFrontCode,
+        acceptLanguage: storeFrontCode ? "en" : undefined
+      });
+      const items = productItemsFromBody(body);
+      const summary = {
+        endpoint,
+        storeFrontCode: storeFrontCode || "none",
+        totalElements: body.totalElements,
+        totalPages: body.totalPages,
+        itemCount: items.length
+      };
+      if (!items.length) {
+        emptySuccesses.push(summary);
+        continue;
+      }
+      const firstResult = {
+        body,
+        endpoint,
+        storeFrontCode,
+        items
+      };
+      return paginate ? fetchRemainingPages(firstResult, size) : firstResult;
+    } catch (error) {
+      failures.push({
+        endpoint,
+        storeFrontCode: storeFrontCode || "none",
+        statusCode: error.statusCode,
+        message: error.message
+      });
+      if ([401, 403, 429].includes(error.statusCode)) throw error;
+    }
+    }
+  }
+
+  if (emptySuccesses.length) {
+    return {
+      body: {
+        totalElements: 0,
+        totalPages: 0,
+        content: [],
+        diagnostics: emptySuccesses,
+        failures
+      },
+      endpoint: emptySuccesses[0].endpoint,
+      items: []
+    };
+  }
+
+  const error = new Error(
+    "Could not find a Trendyol product listing endpoint for this account. Check Production/Stage, Seller ID, and whether this is a Türkiye Marketplace seller account."
+  );
+  error.statusCode = 404;
+  error.body = { tried: failures };
+  throw error;
+}
+
+async function handleApi(req, res, url) {
+  if (req.method === "OPTIONS") {
+    sendJson(res, 204, {});
+    return;
+  }
+
+  try {
+    if (url.pathname === "/api/health") {
+      sendJson(res, 200, {
+        ok: true,
+        service: "trendlift",
+        status: "healthy"
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/status") {
+      const analysisReady = Boolean(providerKey(AI_ANALYSIS_PROVIDER));
+      const imageReady = Boolean(providerKey(AI_IMAGE_PROVIDER));
+      sendJson(res, 200, {
+        ok: true,
+        connected: hasCredentials(),
+        environment: session.environment,
+        sellerId: session.sellerId ? `${session.sellerId.slice(0, 3)}***` : ""
+        ,
+        storeFrontCode: session.storeFrontCode || "auto",
+        imageAiAvailable: analysisReady && imageReady,
+        analysisAiAvailable: analysisReady,
+        generationAiAvailable: imageReady,
+        analysisProvider: AI_ANALYSIS_PROVIDER,
+        imageProvider: AI_IMAGE_PROVIDER,
+        openAiConfigured: Boolean(OPENAI_API_KEY),
+        googleAiConfigured: Boolean(GOOGLE_API_KEY),
+        ideogramConfigured: Boolean(IDEOGRAM_API_KEY),
+        publicImageHosting: Boolean(publicBaseUrl(req)),
+        publicBaseUrl: publicBaseUrl(req),
+        imageAiModel: AI_ANALYSIS_PROVIDER === "google" ? GEMINI_MODEL : OPENAI_MODEL
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/connect" && req.method === "POST") {
+      const body = await requestJson(req);
+      session.sellerId = String(body.sellerId || "");
+      session.apiKey = String(body.apiKey || "");
+      session.apiSecret = String(body.apiSecret || "");
+      session.environment = body.environment === "stage" ? "stage" : "prod";
+      session.storeFrontCode = String(body.storeFrontCode || "").trim().toUpperCase();
+      const result = await fetchProducts({ state: "all", size: "100", page: "0", paginate: false });
+      if (!session.storeFrontCode && result.storeFrontCode) {
+        session.storeFrontCode = result.storeFrontCode;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        message: "Trendyol credentials verified.",
+        endpoint: result.endpoint,
+        storeFrontCode: result.storeFrontCode || session.storeFrontCode || "none",
+        count: result.items.length
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/config-ai" && req.method === "POST") {
+      const body = await requestJson(req);
+      const openAiKey = String(body.openAiApiKey || body.apiKey || "").trim();
+      const googleApiKey = String(body.googleApiKey || "").trim();
+      const ideogramApiKey = String(body.ideogramApiKey || "").trim();
+      const nextOpenAiKey = openAiKey || OPENAI_API_KEY;
+      const nextGoogleApiKey = googleApiKey || GOOGLE_API_KEY;
+      const nextIdeogramApiKey = ideogramApiKey || IDEOGRAM_API_KEY;
+      const nextAnalysisProvider = body.analysisProvider === "google" ? "google" : "openai";
+      const nextImageProvider = ["google", "ideogram"].includes(body.imageProvider) ? body.imageProvider : "openai";
+      const nextProviderKey = (provider) => {
+        if (provider === "google") return nextGoogleApiKey;
+        if (provider === "ideogram") return nextIdeogramApiKey;
+        return nextOpenAiKey;
+      };
+      if (!nextProviderKey(nextAnalysisProvider)) {
+        sendJson(res, 400, { ok: false, message: `${providerLabel(nextAnalysisProvider)} API key is required for product analysis.` });
+        return;
+      }
+      if (!nextProviderKey(nextImageProvider)) {
+        sendJson(res, 400, { ok: false, message: `${providerLabel(nextImageProvider)} API key is required for image generation.` });
+        return;
+      }
+      OPENAI_API_KEY = nextOpenAiKey;
+      GOOGLE_API_KEY = nextGoogleApiKey;
+      IDEOGRAM_API_KEY = nextIdeogramApiKey;
+      OPENAI_MODEL = String(body.openAiModel || body.model || OPENAI_MODEL || "gpt-5.4-mini").trim();
+      OPENAI_IMAGE_MODEL = String(body.openAiImageModel || body.imageModel || OPENAI_IMAGE_MODEL || "gpt-image-2").trim();
+      GEMINI_MODEL = String(body.geminiModel || GEMINI_MODEL || "gemini-2.5-flash").trim();
+      GEMINI_IMAGE_MODEL = String(body.geminiImageModel || GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview").trim();
+      AI_ANALYSIS_PROVIDER = nextAnalysisProvider;
+      AI_IMAGE_PROVIDER = nextImageProvider;
+      sendJson(res, 200, {
+        ok: true,
+        message: `${providerLabel(AI_ANALYSIS_PROVIDER)} analysis and ${providerLabel(AI_IMAGE_PROVIDER)} image generation are enabled.`,
+        analysisProvider: AI_ANALYSIS_PROVIDER,
+        imageProvider: AI_IMAGE_PROVIDER,
+        model: AI_ANALYSIS_PROVIDER === "google" ? GEMINI_MODEL : OPENAI_MODEL,
+        imageModel: AI_IMAGE_PROVIDER === "google"
+          ? GEMINI_IMAGE_MODEL
+          : AI_IMAGE_PROVIDER === "ideogram"
+            ? "ideogram-edit"
+            : OPENAI_IMAGE_MODEL,
+        openAiConfigured: Boolean(OPENAI_API_KEY),
+        googleAiConfigured: Boolean(GOOGLE_API_KEY),
+        ideogramConfigured: Boolean(IDEOGRAM_API_KEY)
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/products" && req.method === "GET") {
+      const state = url.searchParams.get("state") || "approved";
+      const size = url.searchParams.get("size") || "50";
+      const page = url.searchParams.get("page") || "0";
+      const nextPageToken = url.searchParams.get("nextPageToken");
+      const paginate = url.searchParams.get("paginate") !== "false";
+      const result = await fetchProducts({ state, size, page, nextPageToken, paginate });
+      sendJson(res, 200, {
+        ok: true,
+        endpoint: result.endpoint,
+        storeFrontCode: result.storeFrontCode || session.storeFrontCode || "none",
+        items: result.items,
+        nextPageToken: result.body.nextPageToken || null,
+        raw: result.body
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/category-suggestions" && req.method === "GET") {
+      const query = String(url.searchParams.get("q") || "").trim();
+      if (!query) {
+        sendJson(res, 400, { ok: false, message: "A product or category name is required." });
+        return;
+      }
+      const language = url.searchParams.get("language") === "ar" ? "ar" : "en";
+      const body = await trendyolFetch("/integration/product/product-categories", {
+        method: "GET",
+        storeFrontCode: "SA",
+        acceptLanguage: language
+      });
+      const categories = flattenCategories(body.categories || body.content || body)
+        .filter((category) => category.id && category.name)
+        .map((category) => ({ ...category, score: categoryMatchScore(category, query) }))
+        .filter((category) => category.score > 0)
+        .sort((a, b) => b.score - a.score || Number(b.leaf) - Number(a.leaf))
+        .slice(0, 8);
+      sendJson(res, 200, { ok: true, query, categories });
+      return;
+    }
+
+    if (url.pathname === "/api/export-excel" && req.method === "POST") {
+      const body = await requestJson(req);
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      if (!rows.length) {
+        sendJson(res, 400, { ok: false, message: "No rows were provided for export." });
+        return;
+      }
+      await fs.mkdir(EXPORT_DIR, { recursive: true });
+      const filename = safeFilename(body.filename || `TrendLift_${rows.length}_listings.xls`);
+      const filePath = path.join(EXPORT_DIR, filename.endsWith(".xls") ? filename : `${filename}.xls`);
+      await fs.writeFile(filePath, excelHtml(rows), "utf8");
+      sendJson(res, 200, {
+        ok: true,
+        filename: path.basename(filePath),
+        path: filePath,
+        folder: EXPORT_DIR,
+        message: `Saved ${rows.length} listings to ${filePath}`
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/optimize-listing" && req.method === "POST") {
+      const body = await requestJson(req);
+      const result = await optimizeWithImage(body.listing || {});
+      sendJson(res, 200, {
+        ok: true,
+        title: result.title,
+        description: result.description,
+        detectedProductType: result.detectedProductType,
+        suggestedCategory: result.suggestedCategory || "",
+        mismatch: Boolean(result.mismatch),
+        warning: result.warning || "",
+        color: result.color || "",
+        material: result.material || "",
+        keywords: result.keywords || [],
+        model: AI_ANALYSIS_PROVIDER === "google" ? GEMINI_MODEL : OPENAI_MODEL,
+        provider: AI_ANALYSIS_PROVIDER
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/analyze-new-product" && req.method === "POST") {
+      const body = await requestJson(req);
+      const result = await analyzeNewProductImage(body.image, body.outputLanguage);
+      sendJson(res, 200, {
+        ok: true,
+        productType: result.detectedProductType,
+        suggestedCategory: result.suggestedCategory || "",
+        title: result.title,
+        description: result.description,
+        warning: result.warning || "AI-generated fields require review.",
+        origin: "SA",
+        attributes: [
+          ...(result.attributes || []),
+          ...(result.color ? [{ attributeName: "Color", customAttributeValue: result.color }] : []),
+          ...(result.material ? [{ attributeName: "Material", customAttributeValue: result.material }] : [])
+        ].filter((attribute, index, rows) =>
+          rows.findIndex((candidate) => normalizedAttributeText(candidate.attributeName) === normalizedAttributeText(attribute.attributeName)) === index
+        ),
+        keywords: result.keywords || []
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/generate-product-image" && req.method === "POST") {
+      const body = await requestJson(req);
+      const result = await generateProductImage(body);
+      sendJson(res, 200, {
+        ok: true,
+        ...result,
+        provider: AI_IMAGE_PROVIDER,
+        publicUrl: generatedPublicUrl(req, result.image),
+        message: `${result.label} created and added to the listing review.`
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/save-generated-image" && req.method === "POST") {
+      const body = await requestJson(req);
+      const match = String(body.image || "").match(/^data:image\/png;base64,(.+)$/);
+      if (!match) {
+        sendJson(res, 400, { ok: false, message: "A valid branded PNG image is required." });
+        return;
+      }
+      const imageBuffer = Buffer.from(match[1], "base64");
+      if (!imageBuffer.length || imageBuffer.length > 20 * 1024 * 1024) {
+        sendJson(res, 400, { ok: false, message: "The branded image is empty or too large." });
+        return;
+      }
+      await fs.mkdir(GENERATED_DIR, { recursive: true });
+      const scene = safeFilename(String(body.scene || "branded")).replace(/\.[^.]+$/, "") || "branded";
+      const filename = `product-${scene}-branded-${Date.now()}.png`;
+      await fs.writeFile(path.join(GENERATED_DIR, filename), imageBuffer);
+      const image = `/generated/${filename}`;
+      sendJson(res, 200, {
+        ok: true,
+        image,
+        publicUrl: generatedPublicUrl(req, image),
+        width: 1200,
+        height: 1800
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/prepare-product-attributes" && req.method === "POST") {
+      const body = await requestJson(req);
+      const categoryId = Number(body.categoryId);
+      if (!categoryId) {
+        sendJson(res, 400, { ok: false, message: "Select a Trendyol category before preparing attributes." });
+        return;
+      }
+      const prepared = await prepareCategoryAttributes(
+        categoryId,
+        body.attributes,
+        body.image,
+        {
+          title: body.title,
+          description: body.description,
+          productType: body.productType
+        }
+      );
+      sendJson(res, 200, {
+        ok: true,
+        ...prepared,
+        message: prepared.missingRequiredAttributes.length
+          ? `${prepared.attributes.length} attributes prepared. ${prepared.missingRequiredAttributes.length} mandatory attributes still need review.`
+          : `All ${prepared.requiredCount} mandatory category attributes are ready.`
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/create-product" && req.method === "POST") {
+      const body = await requestJson(req);
+      const barcode = String(body.barcode || "").trim().slice(0, 40);
+      const modelCode = String(body.modelCode || "").trim().slice(0, 40);
+      const stockCode = String(body.stockCode || "").trim().slice(0, 100);
+      if (!barcode || !modelCode || !stockCode) {
+        sendJson(res, 400, { ok: false, message: "Barcode, model code and stock code are required." });
+        return;
+      }
+      const title = String(body.title || "").trim().slice(0, 100);
+      const description = String(body.description || "").trim();
+      const brandId = Number(body.brandId);
+      const categoryId = Number(body.categoryId);
+      const listPrice = Number(body.listPrice);
+      const salePrice = Number(body.salePrice);
+      const images = (Array.isArray(body.images) ? body.images : [])
+        .map((url) => String(url || "").trim())
+        .filter((url) => /^https:\/\//i.test(url))
+        .slice(0, 8);
+      if (!title || !description || !brandId || !categoryId || !(listPrice > 0) || !(salePrice > 0)) {
+        sendJson(res, 400, { ok: false, message: "Title, description, brand, category and positive SAR prices are required." });
+        return;
+      }
+      if (!images.length || images.length !== (Array.isArray(body.images) ? body.images.length : 0)) {
+        sendJson(res, 400, { ok: false, message: "Every product image must use a public HTTPS URL that Trendyol can download." });
+        return;
+      }
+      const categoryAttributes = await fetchCategoryAttributes(categoryId);
+      const attributes = await resolveCategoryAttributes(categoryId, body.attributes, categoryAttributes);
+      const missingRequiredAttributes = unresolvedRequiredAttributes(categoryAttributes, attributes);
+      if (missingRequiredAttributes.length) {
+        sendJson(res, 400, {
+          ok: false,
+          message: `Complete the mandatory category attributes before listing: ${missingRequiredAttributes.map((attribute) => attribute.name).join(", ")}.`,
+          missingRequiredAttributes: missingRequiredAttributes.map(({ attributeId, name, allowCustom, values }) => ({
+            attributeId,
+            name,
+            allowCustom,
+            values: values.slice(0, 20)
+          }))
+        });
+        return;
+      }
+      const item = {
+        barcode,
+        title,
+        description,
+        productMainId: modelCode,
+        brandId,
+        categoryId,
+        quantity: Number(body.quantity || 0),
+        stockCode,
+        origin: String(body.origin || "SA").slice(0, 2),
+        dimensionalWeight: Number(body.dimensionalWeight || 1),
+        listPrice,
+        salePrice,
+        vatRate: Number(body.vatRate || 0),
+        images: images.map((url) => ({ url })),
+        attributes
+      };
+      const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
+        method: "POST",
+        storeFrontCode: session.storeFrontCode,
+        acceptLanguage: "en",
+        body: JSON.stringify({ items: [item] })
+      });
+      sendJson(res, 200, {
+        ok: true,
+        batchRequestId: result.batchRequestId || null,
+        codes: { barcode, productMainId: modelCode, stockCode },
+        raw: result,
+        message: result.batchRequestId
+          ? `Product submitted to Trendyol. Batch request ID: ${result.batchRequestId}`
+          : "Product submitted to Trendyol for approval."
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/publish" && req.method === "POST") {
+      const body = await requestJson(req);
+      const listing = body.listing || {};
+      if (!listing.contentId) {
+        sendJson(res, 400, {
+          ok: false,
+          message: "Cannot publish this listing because Trendyol did not provide a contentId. Sync approved products again and retry."
+        });
+        return;
+      }
+
+      if (body.dryRun) {
+        sendJson(res, 200, {
+          ok: true,
+          dryRun: true,
+          message: "Dry run complete. Turn off Dry-run publishing in Settings to send title and description to Trendyol."
+        });
+        return;
+      }
+
+      const updateBody = {
+        items: [
+          {
+            contentId: Number(listing.contentId),
+            title: String(listing.title || "").trim(),
+            description: String(listing.description || "").trim()
+          }
+        ]
+      };
+      const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/products/content-bulk-update`, {
+        method: "POST",
+        storeFrontCode: session.storeFrontCode,
+        acceptLanguage: session.storeFrontCode ? "en" : undefined,
+        body: JSON.stringify(updateBody)
+      });
+      sendJson(res, 200, {
+        ok: true,
+        dryRun: false,
+        batchRequestId: result.batchRequestId || result.id || null,
+        raw: result,
+        message: result.batchRequestId
+          ? `Submitted to Trendyol. Batch request ID: ${result.batchRequestId}`
+          : "Submitted to Trendyol. Check Seller Center or batch status for completion."
+      });
+      return;
+    }
+
+    sendJson(res, 404, { ok: false, message: "API route not found." });
+  } catch (error) {
+    const isGoogleRateLimit = error.provider === "google" && error.statusCode === 429;
+    const isOpenAiRateLimit = error.provider === "openai" && error.statusCode === 429;
+    const isIdeogramRateLimit = error.provider === "ideogram" && error.statusCode === 429;
+    sendJson(res, error.statusCode || 500, {
+      ok: false,
+      message: error.message || "Server error",
+      code: isGoogleRateLimit
+        ? "GOOGLE_RATE_LIMIT"
+        : isIdeogramRateLimit
+          ? "IDEOGRAM_RATE_LIMIT"
+        : isOpenAiRateLimit
+          ? "OPENAI_RATE_LIMIT"
+          : error.provider === "openai" && error.statusCode === 402
+            ? "OPENAI_BILLING"
+            : "",
+      detail: error.body || null
+    });
+  }
+}
+
+async function serveStatic(req, res, url) {
+  const cleanPath = url.pathname === "/" ? "/index.html" : decodeURIComponent(url.pathname);
+  const filePath = path.normalize(path.join(ROOT, cleanPath));
+  if (!filePath.startsWith(ROOT)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
+
+  try {
+    const file = await fs.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { "Content-Type": MIME_TYPES[ext] || "application/octet-stream" });
+    res.end(file);
+  } catch {
+    res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end("Not found");
+  }
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  if (url.pathname.startsWith("/api/")) {
+    await handleApi(req, res, url);
+    return;
+  }
+  await serveStatic(req, res, url);
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`TrendLift ready on http://${HOST}:${PORT}`);
+  console.log("Use Settings to test Trendyol Seller ID, API key, and API secret.");
+});
