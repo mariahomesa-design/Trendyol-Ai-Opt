@@ -494,8 +494,22 @@
                     <span id="newProductSubmissionMessage"></span>
                   </div>
                 </section>
+                <button class="ghost-btn hidden" id="listAnotherProductBtn" type="button">
+                  <span data-lucide="plus"></span>
+                  List another product
+                </button>
               </form>
             </div>
+          </div>
+          <div class="panel recently-listed-panel">
+            <div class="panel-header compact">
+              <div>
+                <p class="eyebrow">Submission history</p>
+                <h2>Recently listed products</h2>
+              </div>
+              <input id="recentBatchSearch" class="compact-search" placeholder="Search batch, barcode or title" />
+            </div>
+            <div class="recently-listed-products" id="recentlyListedProducts"></div>
           </div>
         </section>
 

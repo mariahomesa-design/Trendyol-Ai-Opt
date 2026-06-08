@@ -179,6 +179,8 @@ const state = {
   categoryAttributesPrepared: false,
   publicImageHosting: false,
   latestProductSubmission: null,
+  recentProductSubmissions: [],
+  batchPollTimer: null,
   sellerLogoData: "",
   sellerLogoPosition: "top-left",
   lastSyncMessage: "",
@@ -202,6 +204,8 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_STORAGE_KEY = "trendlift-timed-session";
 
 const els = {
   connectionCard: $("#connectionCard"),
@@ -232,11 +236,14 @@ const els = {
   publishBtn: $("#publishBtn")
 };
 
-function init() {
+async function init() {
   loadSavedSettings();
   bindEvents();
   hydrateSettingsForms();
-  checkServerStatus();
+  bindSessionActivity();
+  await restoreTimedSession();
+  await checkServerStatus();
+  startBatchPolling();
   render();
 }
 
@@ -288,6 +295,8 @@ function bindEvents() {
   $("#generateImagesBtn").addEventListener("click", generateNewProductImages);
   $("#newProductForm").addEventListener("submit", submitNewProduct);
   $("#checkProductBatchBtn").addEventListener("click", checkLatestProductBatch);
+  $("#listAnotherProductBtn").addEventListener("click", resetNewProductForm);
+  $("#recentBatchSearch").addEventListener("input", renderRecentlyListedProducts);
   $("#newTitle").addEventListener("input", updateNewTitleCount);
   $("#newCategoryId").addEventListener("change", prepareProductAttributes);
   $("#newBrandId").addEventListener("change", () => {
@@ -339,12 +348,100 @@ function loadSavedSettings() {
   } catch {
     state.latestProductSubmission = null;
   }
+  try {
+    state.recentProductSubmissions = JSON.parse(localStorage.getItem("trendlift-recent-product-submissions") || "[]");
+  } catch {
+    state.recentProductSubmissions = [];
+  }
   $("#productBatchLookup").value = state.latestProductSubmission?.batchRequestId || "";
   renderProductSubmissionStatus();
+  renderRecentlyListedProducts();
 }
 
 function saveSettings() {
   localStorage.setItem("trendlift-settings", JSON.stringify(state.settings));
+}
+
+function readTimedSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function writeTimedSession(update = {}) {
+  const current = readTimedSession() || {};
+  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    ...current,
+    ...update,
+    lastActivity: Date.now()
+  }));
+}
+
+function clearTimedSession(showMessage = false) {
+  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  state.connected = false;
+  state.mode = "none";
+  if (showMessage) {
+    showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
+    setOperation("Session expired");
+    render();
+  }
+}
+
+function bindSessionActivity() {
+  let lastWrite = 0;
+  const markActivity = () => {
+    const session = readTimedSession();
+    if (!session) return;
+    const now = Date.now();
+    if (now - lastWrite < 15000) return;
+    lastWrite = now;
+    writeTimedSession();
+  };
+  ["click", "keydown", "input", "pointermove"].forEach((eventName) => {
+    window.addEventListener(eventName, markActivity, { passive: true });
+  });
+  window.setInterval(() => {
+    const session = readTimedSession();
+    if (session && Date.now() - Number(session.lastActivity || 0) >= SESSION_TIMEOUT_MS) {
+      clearTimedSession(true);
+    }
+  }, 30000);
+}
+
+async function restoreTimedSession() {
+  const saved = readTimedSession();
+  if (!saved) return;
+  if (Date.now() - Number(saved.lastActivity || 0) >= SESSION_TIMEOUT_MS) {
+    clearTimedSession();
+    return;
+  }
+  try {
+    if (saved.ai) {
+      await apiFetch("/api/config-ai", {
+        method: "POST",
+        body: JSON.stringify(saved.ai)
+      });
+    }
+    if (saved.trendyol) {
+      const result = await apiFetch("/api/connect", {
+        method: "POST",
+        body: JSON.stringify(saved.trendyol)
+      });
+      state.connected = true;
+      state.mode = "live";
+      $("#sellerId").value = saved.trendyol.sellerId || "";
+      $("#apiKey").value = saved.trendyol.apiKey || "";
+      $("#apiSecret").value = saved.trendyol.apiSecret || "";
+      $("#environment").value = saved.trendyol.environment || "prod";
+      $("#storeFrontCode").value = result.storeFrontCode || saved.trendyol.storeFrontCode || "SA";
+    }
+    writeTimedSession();
+  } catch {
+    clearTimedSession();
+  }
 }
 
 function hydrateSettingsForms() {
@@ -408,20 +505,21 @@ async function saveAiSettings(event) {
   event.preventDefault();
   const button = event.submitter;
   button.disabled = true;
+  const aiPayload = {
+    analysisProvider: $("#analysisProvider").value,
+    imageProvider: $("#imageProvider").value,
+    openAiApiKey: $("#openAiApiKey").value.trim(),
+    openAiModel: $("#openAiModel").value.trim(),
+    openAiImageModel: $("#openAiImageModel").value.trim(),
+    googleApiKey: $("#googleAiApiKey").value.trim(),
+    geminiModel: $("#geminiModel").value.trim(),
+    geminiImageModel: $("#geminiImageModel").value.trim(),
+    ideogramApiKey: $("#ideogramApiKey").value.trim()
+  };
   try {
     const result = await apiFetch("/api/config-ai", {
       method: "POST",
-      body: JSON.stringify({
-        analysisProvider: $("#analysisProvider").value,
-        imageProvider: $("#imageProvider").value,
-        openAiApiKey: $("#openAiApiKey").value.trim(),
-        openAiModel: $("#openAiModel").value.trim(),
-        openAiImageModel: $("#openAiImageModel").value.trim(),
-        googleApiKey: $("#googleAiApiKey").value.trim(),
-        geminiModel: $("#geminiModel").value.trim(),
-        geminiImageModel: $("#geminiImageModel").value.trim(),
-        ideogramApiKey: $("#ideogramApiKey").value.trim()
-      })
+      body: JSON.stringify(aiPayload)
     });
     state.imageAiAvailable = true;
     state.analysisAiAvailable = true;
@@ -429,6 +527,16 @@ async function saveAiSettings(event) {
     state.settings.analysisProvider = result.analysisProvider;
     state.settings.imageProvider = result.imageProvider;
     saveSettings();
+    const currentSession = readTimedSession() || {};
+    writeTimedSession({
+      ai: {
+        ...currentSession.ai,
+        ...aiPayload,
+        openAiApiKey: aiPayload.openAiApiKey || currentSession.ai?.openAiApiKey || "",
+        googleApiKey: aiPayload.googleApiKey || currentSession.ai?.googleApiKey || "",
+        ideogramApiKey: aiPayload.ideogramApiKey || currentSession.ai?.ideogramApiKey || ""
+      }
+    });
     $("#openAiApiKey").value = "";
     $("#googleAiApiKey").value = "";
     $("#ideogramApiKey").value = "";
@@ -500,6 +608,12 @@ async function connectRealStore(event) {
     state.settings.storeFrontCode = result.storeFrontCode && result.storeFrontCode !== "none" ? result.storeFrontCode : payload.storeFrontCode;
     $("#storeFrontCode").value = state.settings.storeFrontCode || "";
     saveSettings();
+    writeTimedSession({
+      trendyol: {
+        ...payload,
+        storeFrontCode: state.settings.storeFrontCode || payload.storeFrontCode
+      }
+    });
     $("#serverStatus").textContent = "Connected";
     showToast("Trendyol connection verified. Click Sync to load all active and inactive listings.");
     setOperation("Connection verified. Ready to sync.");
@@ -562,6 +676,7 @@ async function syncListings() {
 }
 
 function disconnectStore() {
+  clearTimedSession();
   state.connected = false;
   state.mode = "none";
   state.selectedId = null;
@@ -2558,12 +2673,15 @@ async function submitNewProduct(event) {
       barcode: payload.barcode,
       title: payload.title,
       state: "processing",
-      message: "Trendyol accepted the request and is processing it."
+      message: "Trendyol accepted the request and is processing it.",
+      submittedAt: new Date().toISOString()
     } : null;
     if (state.latestProductSubmission) {
       localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(state.latestProductSubmission));
+      saveRecentProductSubmission(state.latestProductSubmission);
       $("#productBatchLookup").value = result.batchRequestId;
       renderProductSubmissionStatus();
+      $("#listAnotherProductBtn").classList.remove("hidden");
       setTimeout(checkLatestProductBatch, 5000);
     }
     showToast(result.message || "Product submitted to Trendyol.");
@@ -2592,6 +2710,114 @@ function renderProductSubmissionStatus() {
   refreshIcons();
 }
 
+function saveRecentProductSubmission(submission) {
+  const existing = state.recentProductSubmissions.filter((item) => item.batchRequestId !== submission.batchRequestId);
+  state.recentProductSubmissions = [{ ...submission }, ...existing].slice(0, 50);
+  localStorage.setItem("trendlift-recent-product-submissions", JSON.stringify(state.recentProductSubmissions));
+  renderRecentlyListedProducts();
+}
+
+function renderRecentlyListedProducts() {
+  const container = $("#recentlyListedProducts");
+  if (!container) return;
+  const query = $("#recentBatchSearch")?.value.trim().toLowerCase() || "";
+  const rows = state.recentProductSubmissions.filter((item) =>
+    [item.batchRequestId, item.title, item.barcode, item.state].join(" ").toLowerCase().includes(query)
+  );
+  container.innerHTML = rows.length ? rows.map((item) => `
+    <article class="recent-product-row">
+      <div>
+        <strong>${escapeHtml(item.title || "Submitted product")}</strong>
+        <span>Barcode ${escapeHtml(item.barcode || "not recorded")}</span>
+      </div>
+      <div>
+        <strong>${escapeHtml(item.batchRequestId)}</strong>
+        <span>${item.submittedAt ? new Date(item.submittedAt).toLocaleString() : "Submission time not recorded"}</span>
+      </div>
+      <span class="recent-status ${escapeHtml(item.state || "processing")}">${escapeHtml(item.state || "processing")}</span>
+      <button class="ghost-btn recent-check-btn" type="button" data-batch-id="${escapeHtml(item.batchRequestId)}">
+        <span data-lucide="refresh-cw"></span>
+        Check
+      </button>
+    </article>
+  `).join("") : `<div class="insight-empty"><span data-lucide="history"></span><p>No matching product submissions yet.</p></div>`;
+  $$(".recent-check-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      $("#productBatchLookup").value = button.dataset.batchId;
+      checkLatestProductBatch();
+    });
+  });
+  refreshIcons();
+}
+
+function resetNewProductForm() {
+  const savedBrandId = localStorage.getItem("trendlift-default-brand-id") || "";
+  $("#newProductForm").reset();
+  $("#newBrandId").value = savedBrandId;
+  $("#newQuantity").value = "1";
+  $("#newVatRate").value = "15";
+  $("#newDimensionalWeight").value = "1";
+  $("#newOrigin").value = "SA";
+  $("#newProductImage").value = "";
+  $("#newProductPreview").removeAttribute("src");
+  $("#newProductPreview").classList.add("hidden");
+  state.newProductImageData = "";
+  state.newProductAnalysis = null;
+  state.generatedProductImages = [];
+  state.missingCategoryAttributes = [];
+  state.requiredCategoryAttributeCount = 0;
+  state.categoryAttributesPrepared = false;
+  state.latestProductSubmission = null;
+  localStorage.removeItem("trendlift-latest-product-submission");
+  $("#productBatchLookup").value = "";
+  $("#newProductSubmissionStatus").classList.add("hidden");
+  $("#listAnotherProductBtn").classList.add("hidden");
+  $("#imageGenerationStatus").classList.add("hidden");
+  $("#newProductWarning").classList.add("hidden");
+  renderGeneratedProductImages();
+  renderRequiredAttributeFields();
+  renderListingReadiness();
+  updateNewTitleCount();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function startBatchPolling() {
+  window.clearInterval(state.batchPollTimer);
+  state.batchPollTimer = window.setInterval(async () => {
+    if (!state.connected || document.hidden) return;
+    const pending = state.recentProductSubmissions.filter((item) => item.state === "processing").slice(0, 5);
+    for (const submission of pending) {
+      await checkProductSubmission(submission, false);
+    }
+  }, 30000);
+}
+
+async function checkProductSubmission(submission, notify = true) {
+  if (!submission?.batchRequestId || submission.checking) return;
+  submission.checking = true;
+  try {
+    const result = await apiFetch(`/api/product-batch-status?batchRequestId=${encodeURIComponent(submission.batchRequestId)}`);
+    submission.state = result.state;
+    submission.message = result.message;
+    submission.failures = result.failures || [];
+    saveRecentProductSubmission(submission);
+    if (state.latestProductSubmission?.batchRequestId === submission.batchRequestId) {
+      state.latestProductSubmission = { ...submission };
+      localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(state.latestProductSubmission));
+    }
+    if (notify) showToast(result.message);
+    return result;
+  } catch (error) {
+    submission.message = error.message || "Could not check batch status.";
+    if (notify) showToast(submission.message);
+    return null;
+  } finally {
+    submission.checking = false;
+    saveRecentProductSubmission(submission);
+    renderProductSubmissionStatus();
+  }
+}
+
 async function checkLatestProductBatch() {
   const enteredBatchRequestId = $("#productBatchLookup").value.trim();
   if (!enteredBatchRequestId) {
@@ -2608,27 +2834,14 @@ async function checkLatestProductBatch() {
   }
   const submission = state.latestProductSubmission;
   if (submission.checking) return;
-  submission.checking = true;
   renderProductSubmissionStatus();
-  try {
-    const result = await apiFetch(`/api/product-batch-status?batchRequestId=${encodeURIComponent(submission.batchRequestId)}`);
-    submission.state = result.state;
-    submission.message = result.message;
-    submission.failures = result.failures || [];
-    localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(submission));
-    showToast(result.message);
+  const result = await checkProductSubmission(submission, true);
+  if (result) {
     if (result.state === "completed") {
       setOperation(`Product batch processed: ${submission.batchRequestId}. Sync listings to check approval.`);
     } else if (result.state === "failed") {
       setOperation(`Product rejected: ${(result.failures || []).join(" | ") || result.message}`);
     }
-  } catch (error) {
-    submission.message = error.message || "Could not check batch status.";
-    showToast(submission.message);
-  } finally {
-    submission.checking = false;
-    localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(submission));
-    renderProductSubmissionStatus();
   }
 }
 
