@@ -632,6 +632,17 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
 }
 
+async function imageInputToBlob(image) {
+  if (/^data:/i.test(String(image || ""))) return dataUrlToBlob(image);
+  if (!/^https:\/\//i.test(String(image || ""))) throw new Error("A valid product image is required.");
+  const response = await fetch(image);
+  if (!response.ok) throw new Error(`Could not download the product image (${response.status}).`);
+  const contentType = String(response.headers.get("content-type") || "image/png").split(";")[0];
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error("The product image is empty or too large.");
+  return new Blob([bytes], { type: contentType });
+}
+
 const PRODUCT_IMAGE_SCENES = {
   hero: {
     label: "Hero lifestyle image",
@@ -639,7 +650,7 @@ const PRODUCT_IMAGE_SCENES = {
   },
   lifestyle: {
     label: "Lifestyle image",
-    prompt: "Create a second premium lifestyle photograph showing the exact reference product in believable everyday use. Choose a natural setting appropriate to the item. If a person is useful for scale, show only one natural, anatomically correct adult interacting realistically with the product. Use professional commercial photography, accurate perspective, crisp product detail, realistic lighting and no text or extra logos."
+    prompt: "Create a second premium lifestyle photograph showing exactly ONE instance of the reference product in believable everyday use. Never add a second copy, mirrored copy, background copy, matching pair or partial duplicate of the product. Choose a natural setting appropriate to the item. If a person is useful for scale, show only one natural, anatomically correct adult interacting realistically with the single product. Use luxury furniture-brand commercial photography, accurate perspective, crisp product detail, realistic lighting and no text or extra logos."
   },
   features: {
     label: "Bilingual features image",
@@ -675,6 +686,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless the requested four-angle contact sheet explicitly requires multiple consistent views.",
+    scene === "lifestyle" ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
@@ -693,7 +705,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
 async function generateOpenAiProductImage({ image, prompt, sceneConfig, scene }) {
   const form = new FormData();
   form.append("model", OPENAI_IMAGE_MODEL);
-  form.append("image", dataUrlToBlob(image), "product.png");
+  form.append("image", await imageInputToBlob(image), "product.png");
   form.append("prompt", prompt);
   form.append("n", "1");
   form.append("size", "1024x1536");
@@ -800,11 +812,11 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
 
 async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene }) {
   const form = new FormData();
-  form.append("images", dataUrlToBlob(image), "product.png");
+  form.append("images", await imageInputToBlob(image), "product.png");
   form.append("prompt", prompt);
   form.append("num_images", "1");
   form.append("aspect_ratio", "2x3");
-  form.append("magic_prompt", "AUTO");
+  form.append("magic_prompt", "OFF");
   form.append("transparent_background", "false");
   const response = await fetch("https://api.ideogram.ai/v1/edit", {
     method: "POST",
@@ -830,6 +842,20 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
     modelUsed: "ideogram-edit",
     usedFallback: false
   };
+}
+
+function normalizeBatchItems(body) {
+  return body.items || body.content || body.results || [];
+}
+
+function batchFailureMessages(items) {
+  return items.flatMap((item) => {
+    const reasons = item.failureReasons || item.errors || item.reasons || [];
+    if (Array.isArray(reasons)) {
+      return reasons.map((reason) => reason.message || reason.errorMessage || reason.description || String(reason));
+    }
+    return reasons ? [String(reasons)] : [];
+  }).filter(Boolean);
 }
 
 async function saveGeneratedPortrait(imageBuffer, label, scene) {
@@ -1392,6 +1418,109 @@ async function handleApi(req, res, url) {
         message: result.batchRequestId
           ? `Product submitted to Trendyol. Batch request ID: ${result.batchRequestId}`
           : "Product submitted to Trendyol for approval."
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/product-batch-status" && req.method === "GET") {
+      const batchRequestId = String(url.searchParams.get("batchRequestId") || "").trim();
+      if (!batchRequestId) {
+        sendJson(res, 400, { ok: false, message: "Batch request ID is required." });
+        return;
+      }
+      const body = await trendyolFetch(
+        `/integration/product/sellers/${session.sellerId}/products/batch-requests/${encodeURIComponent(batchRequestId)}`,
+        {
+          method: "GET",
+          storeFrontCode: session.storeFrontCode,
+          acceptLanguage: "en"
+        }
+      );
+      const items = normalizeBatchItems(body);
+      const failures = batchFailureMessages(items);
+      const statuses = items.map((item) => String(item.status || item.state || item.result || "").toUpperCase()).filter(Boolean);
+      const failed = failures.length > 0 || statuses.some((status) => /FAIL|ERROR|REJECT/.test(status));
+      const pending = !items.length || statuses.some((status) => /PENDING|PROCESS|WAIT|CREATED/.test(status));
+      sendJson(res, 200, {
+        ok: true,
+        batchRequestId,
+        state: failed ? "failed" : pending ? "processing" : "completed",
+        itemCount: items.length,
+        failures,
+        items,
+        raw: body,
+        message: failed
+          ? `Trendyol rejected the product: ${failures.join(" | ") || statuses.join(", ")}`
+          : pending
+            ? "Trendyol is still processing this product."
+            : "Trendyol processed the product successfully. It may still be waiting for marketplace approval."
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/update-product-images" && req.method === "POST") {
+      const body = await requestJson(req);
+      const source = body.source || {};
+      const variant = source.variants?.[0] || source;
+      const sourcePrice = variant.price || source.price || {};
+      const sourceStock = variant.stock || source.stock || {};
+      const images = (Array.isArray(body.images) ? body.images : [])
+        .map((image) => String(image || "").trim())
+        .filter((image) => /^https:\/\//i.test(image))
+        .slice(0, 8);
+      if (!images.length) {
+        sendJson(res, 400, { ok: false, message: "At least one public HTTPS image is required." });
+        return;
+      }
+      const item = {
+        barcode: String(variant.barcode || source.barcode || body.barcode || "").trim(),
+        title: String(source.title || body.title || "").trim().slice(0, 100),
+        description: String(source.description || body.description || "").trim(),
+        productMainId: String(source.productMainId || source.modelCode || body.modelCode || body.productMainId || "").trim(),
+        brandId: Number(source.brandId || source.brand?.id),
+        categoryId: Number(source.categoryId || source.pimCategoryId || source.category?.id),
+        quantity: Number(sourceStock.quantity ?? variant.quantity ?? source.quantity ?? body.quantity ?? 0),
+        stockCode: String(variant.stockCode || source.stockCode || source.stockId || body.stockCode || "").trim(),
+        origin: String(source.origin || "SA").slice(0, 2),
+        dimensionalWeight: Number(variant.dimensionalWeight || source.dimensionalWeight || 1),
+        listPrice: Number(sourcePrice.listPrice || source.listPrice || body.listPrice),
+        salePrice: Number(sourcePrice.salePrice || source.salePrice || source.discountedPrice || body.salePrice),
+        vatRate: Number(variant.vatRate || source.vatRate || 15),
+        images: images.map((image) => ({ url: image })),
+        attributes: Array.isArray(source.attributes)
+          ? source.attributes.map((attribute) => ({
+            attributeId: Number(attribute.attributeId || attribute.attribute?.id),
+            ...(Number(attribute.attributeValueId || attribute.attributeValue?.id)
+              ? { attributeValueId: Number(attribute.attributeValueId || attribute.attributeValue?.id) }
+              : {
+                customAttributeValue: String(
+                  attribute.customAttributeValue
+                  || attribute.attributeValue?.name
+                  || attribute.attributeValue
+                  || ""
+                ).trim()
+              })
+          })).filter((attribute) => attribute.attributeId)
+          : []
+      };
+      const required = ["barcode", "title", "description", "productMainId", "brandId", "categoryId", "stockCode", "listPrice", "salePrice"];
+      const missing = required.filter((field) => !item[field]);
+      if (missing.length) {
+        sendJson(res, 400, { ok: false, message: `Trendyol did not return enough data to update images. Missing: ${missing.join(", ")}.` });
+        return;
+      }
+      const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
+        method: "PUT",
+        storeFrontCode: session.storeFrontCode,
+        acceptLanguage: "en",
+        body: JSON.stringify({ items: [item] })
+      });
+      sendJson(res, 200, {
+        ok: true,
+        batchRequestId: result.batchRequestId || null,
+        message: result.batchRequestId
+          ? `Image update submitted. Batch request ID: ${result.batchRequestId}`
+          : "Image update submitted to Trendyol."
       });
       return;
     }

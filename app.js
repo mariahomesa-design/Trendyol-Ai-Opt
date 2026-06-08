@@ -178,6 +178,7 @@ const state = {
   preparingCategoryAttributes: false,
   categoryAttributesPrepared: false,
   publicImageHosting: false,
+  latestProductSubmission: null,
   sellerLogoData: "",
   sellerLogoPosition: "top-left",
   lastSyncMessage: "",
@@ -286,6 +287,7 @@ function bindEvents() {
   $("#analyzeNewProductBtn").addEventListener("click", analyzeNewProduct);
   $("#generateImagesBtn").addEventListener("click", generateNewProductImages);
   $("#newProductForm").addEventListener("submit", submitNewProduct);
+  $("#checkProductBatchBtn").addEventListener("click", checkLatestProductBatch);
   $("#newTitle").addEventListener("input", updateNewTitleCount);
   $("#newCategoryId").addEventListener("change", prepareProductAttributes);
   $("#newBrandId").addEventListener("change", () => {
@@ -332,6 +334,12 @@ function loadSavedSettings() {
   state.sellerLogoData = localStorage.getItem("trendlift-seller-logo") || "";
   state.sellerLogoPosition = localStorage.getItem("trendlift-logo-position") === "top-right" ? "top-right" : "top-left";
   $("#newBrandId").value = localStorage.getItem("trendlift-default-brand-id") || "";
+  try {
+    state.latestProductSubmission = JSON.parse(localStorage.getItem("trendlift-latest-product-submission") || "null");
+  } catch {
+    state.latestProductSubmission = null;
+  }
+  renderProductSubmissionStatus();
 }
 
 function saveSettings() {
@@ -1482,7 +1490,26 @@ function renderListingDetails() {
       <section>
         <h3>Images</h3>
         <div class="gallery-grid">
-          ${images.length ? images.map((image, index) => `<img src="${image}" alt="${escapeHtml(listing.title)} image ${index + 1}" />`).join("") : `<div class="image-placeholder"><span data-lucide="image"></span></div>`}
+          ${images.length ? images.map((image, index) => `
+            <div class="editable-gallery-item">
+              <img src="${image}" alt="${escapeHtml(listing.title)} image ${index + 1}" />
+              <div class="gallery-order-actions">
+                <button type="button" data-image-action="left" data-image-index="${index}" ${index === 0 ? "disabled" : ""} title="Move image left"><span data-lucide="arrow-left"></span></button>
+                <button type="button" data-image-action="right" data-image-index="${index}" ${index === images.length - 1 ? "disabled" : ""} title="Move image right"><span data-lucide="arrow-right"></span></button>
+                <button type="button" data-image-action="delete" data-image-index="${index}" title="Remove image"><span data-lucide="trash-2"></span></button>
+              </div>
+            </div>
+          `).join("") : `<div class="image-placeholder"><span data-lucide="image"></span></div>`}
+        </div>
+        <div class="button-grid detail-actions">
+          <button class="ghost-btn" id="detailGenerateImageBtn" type="button" ${!state.generationAiAvailable || !listing.image ? "disabled" : ""}>
+            <span data-lucide="images"></span>
+            Create lifestyle image
+          </button>
+          <button class="primary-btn" id="detailSaveImagesBtn" type="button" ${!listing.imagesDirty ? "disabled" : ""}>
+            <span data-lucide="save"></span>
+            Save image order
+          </button>
         </div>
       </section>
       <section>
@@ -1541,7 +1568,94 @@ function renderListingDetails() {
   `;
   $("#detailOptimizeBtn")?.addEventListener("click", createDraftForSelected);
   $("#detailPublishBtn")?.addEventListener("click", publishSelected);
+  $("#detailGenerateImageBtn")?.addEventListener("click", generateImageForSelectedListing);
+  $("#detailSaveImagesBtn")?.addEventListener("click", saveSelectedListingImages);
+  $$("[data-image-action]").forEach((button) => {
+    button.addEventListener("click", () => changeSelectedListingImageOrder(button.dataset.imageAction, Number(button.dataset.imageIndex)));
+  });
   refreshIcons();
+}
+
+function changeSelectedListingImageOrder(action, index) {
+  const listing = selectedListing();
+  if (!listing) return;
+  const images = listing.images?.length ? [...listing.images] : listing.image ? [listing.image] : [];
+  if (!images[index]) return;
+  if (action === "left" && index > 0) {
+    [images[index - 1], images[index]] = [images[index], images[index - 1]];
+  } else if (action === "right" && index < images.length - 1) {
+    [images[index + 1], images[index]] = [images[index], images[index + 1]];
+  } else if (action === "delete") {
+    images.splice(index, 1);
+  }
+  listing.images = images;
+  listing.image = images[0] || "";
+  listing.imagesDirty = true;
+  render();
+}
+
+async function generateImageForSelectedListing() {
+  const listing = selectedListing();
+  if (!listing?.image) return;
+  const button = $("#detailGenerateImageBtn");
+  button.disabled = true;
+  button.innerHTML = `<span data-lucide="loader-circle"></span> Creating`;
+  refreshIcons();
+  try {
+    const result = await apiFetch("/api/generate-product-image", {
+      method: "POST",
+      body: JSON.stringify({
+        image: listing.image,
+        productType: listing.draft?.metadata?.detectedProductType || listing.category || "product",
+        title: listing.draft?.title || listing.title,
+        scene: "lifestyle",
+        customPrompt: "Create one premium lifestyle image for this existing listing. Keep one exact product only."
+      })
+    });
+    const imageUrl = result.publicUrl || result.image;
+    listing.images = [...(listing.images?.length ? listing.images : listing.image ? [listing.image] : []), imageUrl];
+    listing.image = listing.images[0] || listing.image;
+    listing.imagesDirty = true;
+    showToast("New lifestyle image added to this listing.");
+    render();
+  } catch (error) {
+    showToast(error.message || "Could not create listing image.");
+  }
+}
+
+async function saveSelectedListingImages() {
+  const listing = selectedListing();
+  if (!listing?.images?.length) return;
+  const images = listing.images.map((image) => new URL(image, window.location.origin).href);
+  if (images.some((image) => /https?:\/\/(?:localhost|127\.0\.0\.1)(?::|\/)/i.test(image))) {
+    showToast("Image changes must be saved from the public Railway app so Trendyol can access generated images.");
+    return;
+  }
+  const button = $("#detailSaveImagesBtn");
+  button.disabled = true;
+  button.innerHTML = `<span data-lucide="loader-circle"></span> Saving`;
+  refreshIcons();
+  try {
+    const result = await apiFetch("/api/update-product-images", {
+      method: "POST",
+      body: JSON.stringify({
+        source: listing.source || listing.metadata || {},
+        barcode: listing.barcode,
+        title: listing.title,
+        description: listing.description,
+        stockCode: listing.sku,
+        images
+      })
+    });
+    listing.imagesDirty = false;
+    listing.batchRequestId = result.batchRequestId || null;
+    showToast(result.message || "Image update submitted to Trendyol.");
+    setOperation(result.batchRequestId ? `Image update submitted. Batch ${result.batchRequestId}` : "Image update submitted");
+    render();
+  } catch (error) {
+    showToast(error.message || "Could not save image changes to Trendyol.");
+    render();
+  }
 }
 
 function detailRow(label, value) {
@@ -2229,10 +2343,12 @@ async function applySellerLogo(generated) {
   canvas.width = 1200;
   canvas.height = 1800;
   const context = canvas.getContext("2d");
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
   context.drawImage(productImage, 0, 0, canvas.width, canvas.height);
-  const maxWidth = 250;
-  const maxHeight = 170;
-  const scale = Math.min(maxWidth / logoImage.naturalWidth, maxHeight / logoImage.naturalHeight, 1);
+  const maxWidth = 300;
+  const maxHeight = 200;
+  const scale = Math.min(maxWidth / logoImage.naturalWidth, maxHeight / logoImage.naturalHeight);
   const width = Math.round(logoImage.naturalWidth * scale);
   const height = Math.round(logoImage.naturalHeight * scale);
   const margin = 54;
@@ -2436,10 +2552,68 @@ async function submitNewProduct(event) {
       method: "POST",
       body: JSON.stringify(payload)
     });
+    state.latestProductSubmission = result.batchRequestId ? {
+      batchRequestId: result.batchRequestId,
+      barcode: payload.barcode,
+      title: payload.title,
+      state: "processing",
+      message: "Trendyol accepted the request and is processing it."
+    } : null;
+    if (state.latestProductSubmission) {
+      localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(state.latestProductSubmission));
+      renderProductSubmissionStatus();
+      setTimeout(checkLatestProductBatch, 5000);
+    }
     showToast(result.message || "Product submitted to Trendyol.");
     setOperation(result.batchRequestId ? `New product submitted. Batch ${result.batchRequestId}` : "New product submitted");
   } catch (error) {
     showToast(error.message || "Product submission failed.");
+  }
+}
+
+function renderProductSubmissionStatus() {
+  const box = $("#newProductSubmissionStatus");
+  if (!box) return;
+  const submission = state.latestProductSubmission;
+  box.classList.toggle("hidden", !submission);
+  box.classList.remove("failed", "completed");
+  if (!submission) return;
+  box.classList.toggle("failed", submission.state === "failed");
+  box.classList.toggle("completed", submission.state === "completed");
+  $("#newProductSubmissionTitle").textContent = submission.state === "failed"
+    ? "Product rejected"
+    : submission.state === "completed"
+      ? "Batch processed"
+      : "Trendyol is processing";
+  $("#newProductSubmissionMessage").textContent = `${submission.title || submission.barcode || "Product"} · ${submission.message || ""} · Batch ${submission.batchRequestId}`;
+  $("#checkProductBatchBtn").disabled = submission.checking;
+  refreshIcons();
+}
+
+async function checkLatestProductBatch() {
+  const submission = state.latestProductSubmission;
+  if (!submission?.batchRequestId || submission.checking) return;
+  submission.checking = true;
+  renderProductSubmissionStatus();
+  try {
+    const result = await apiFetch(`/api/product-batch-status?batchRequestId=${encodeURIComponent(submission.batchRequestId)}`);
+    submission.state = result.state;
+    submission.message = result.message;
+    submission.failures = result.failures || [];
+    localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(submission));
+    showToast(result.message);
+    if (result.state === "completed") {
+      setOperation(`Product batch processed: ${submission.batchRequestId}. Sync listings to check approval.`);
+    } else if (result.state === "failed") {
+      setOperation(`Product rejected: ${(result.failures || []).join(" | ") || result.message}`);
+    }
+  } catch (error) {
+    submission.message = error.message || "Could not check batch status.";
+    showToast(submission.message);
+  } finally {
+    submission.checking = false;
+    localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(submission));
+    renderProductSubmissionStatus();
   }
 }
 
