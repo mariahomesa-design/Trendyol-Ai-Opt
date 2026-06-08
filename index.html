@@ -478,15 +478,21 @@
                   <span data-lucide="send"></span>
                   List on Trendyol
                 </button>
+                <div class="batch-lookup">
+                  <label>
+                    Check an existing Trendyol batch
+                    <input id="productBatchLookup" placeholder="Paste batch request ID" />
+                  </label>
+                  <button class="ghost-btn" id="checkProductBatchBtn" type="button">
+                    <span data-lucide="refresh-cw"></span>
+                    Check status
+                  </button>
+                </div>
                 <section class="submission-status hidden" id="newProductSubmissionStatus">
                   <div>
                     <strong id="newProductSubmissionTitle">Checking Trendyol</strong>
                     <span id="newProductSubmissionMessage"></span>
                   </div>
-                  <button class="ghost-btn" id="checkProductBatchBtn" type="button">
-                    <span data-lucide="refresh-cw"></span>
-                    Check status
-                  </button>
                 </section>
               </form>
             </div>

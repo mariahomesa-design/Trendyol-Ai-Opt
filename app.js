@@ -339,6 +339,7 @@ function loadSavedSettings() {
   } catch {
     state.latestProductSubmission = null;
   }
+  $("#productBatchLookup").value = state.latestProductSubmission?.batchRequestId || "";
   renderProductSubmissionStatus();
 }
 
@@ -2561,6 +2562,7 @@ async function submitNewProduct(event) {
     } : null;
     if (state.latestProductSubmission) {
       localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(state.latestProductSubmission));
+      $("#productBatchLookup").value = result.batchRequestId;
       renderProductSubmissionStatus();
       setTimeout(checkLatestProductBatch, 5000);
     }
@@ -2591,8 +2593,21 @@ function renderProductSubmissionStatus() {
 }
 
 async function checkLatestProductBatch() {
+  const enteredBatchRequestId = $("#productBatchLookup").value.trim();
+  if (!enteredBatchRequestId) {
+    showToast("Paste a Trendyol batch request ID first.");
+    return;
+  }
+  if (!state.latestProductSubmission || state.latestProductSubmission.batchRequestId !== enteredBatchRequestId) {
+    state.latestProductSubmission = {
+      batchRequestId: enteredBatchRequestId,
+      title: "Existing product submission",
+      state: "processing",
+      message: "Checking this batch with Trendyol."
+    };
+  }
   const submission = state.latestProductSubmission;
-  if (!submission?.batchRequestId || submission.checking) return;
+  if (submission.checking) return;
   submission.checking = true;
   renderProductSubmissionStatus();
   try {
