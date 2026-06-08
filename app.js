@@ -307,6 +307,9 @@ function bindEvents() {
     "newTitle", "newDescription", "newListPrice", "newSalePrice", "newQuantity",
     "newBarcode", "newModelCode", "newStockCode", "newAttributes"
   ].forEach((id) => $(`#${id}`).addEventListener("input", renderListingReadiness));
+  ["newPackageHeight", "newPackageWidth", "newPackageLength"].forEach((id) => {
+    $(`#${id}`).addEventListener("input", calculateTrendyolDimensionalWeight);
+  });
   $("#imageLightboxClose").addEventListener("click", closeImageLightbox);
   $("#imageLightbox").addEventListener("click", (event) => {
     if (event.target === $("#imageLightbox")) closeImageLightbox();
@@ -998,6 +1001,15 @@ function updateNewTitleCount() {
   $("#newTitleCount").textContent = `${length}/100 characters`;
 }
 
+function calculateTrendyolDimensionalWeight() {
+  const height = Number($("#newPackageHeight").value);
+  const width = Number($("#newPackageWidth").value);
+  const length = Number($("#newPackageLength").value);
+  if (!(height > 0 && width > 0 && length > 0)) return;
+  $("#newDimensionalWeight").value = Math.max(1, Math.ceil((height * width * length) / 3000 * 10) / 10);
+  renderListingReadiness();
+}
+
 async function loadCategorySuggestions(query) {
   const suggested = displayValue(query).trim();
   if (!suggested) return;
@@ -1166,10 +1178,10 @@ function renderListingReadiness() {
     },
     {
       label: "Price and inventory",
-      detail: Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0
-        ? "SAR prices and stock ready"
-        : "Enter list price and sale price",
-      ready: Boolean(Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0)
+      detail: Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0 && Number($("#newDimensionalWeight").value) > 0
+        ? "SAR prices, stock and dimensional weight ready"
+        : "Enter prices and package dimensions",
+      ready: Boolean(Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0 && Number($("#newDimensionalWeight").value) > 0)
     },
     {
       label: "Brand",
@@ -1618,9 +1630,13 @@ function renderListingDetails() {
           `).join("") : `<div class="image-placeholder"><span data-lucide="image"></span></div>`}
         </div>
         <div class="button-grid detail-actions">
+          <label class="listing-image-request">
+            Describe the image you want
+            <textarea id="detailImagePrompt" rows="3" placeholder="Example: Place this exact chair in a luxury Saudi living room, one chair only, warm daylight, logo at top left."></textarea>
+          </label>
           <button class="ghost-btn" id="detailGenerateImageBtn" type="button" ${!state.generationAiAvailable || !listing.image ? "disabled" : ""}>
             <span data-lucide="images"></span>
-            Create lifestyle image
+            Create requested image
           </button>
           <button class="primary-btn" id="detailSaveImagesBtn" type="button" ${!listing.imagesDirty ? "disabled" : ""}>
             <span data-lucide="save"></span>
@@ -1713,21 +1729,27 @@ function changeSelectedListingImageOrder(action, index) {
 async function generateImageForSelectedListing() {
   const listing = selectedListing();
   if (!listing?.image) return;
+  const customPrompt = $("#detailImagePrompt").value.trim();
+  if (!customPrompt) {
+    showToast("Describe the image you want AI to create.");
+    return;
+  }
   const button = $("#detailGenerateImageBtn");
   button.disabled = true;
   button.innerHTML = `<span data-lucide="loader-circle"></span> Creating`;
   refreshIcons();
   try {
-    const result = await apiFetch("/api/generate-product-image", {
+    const generated = await apiFetch("/api/generate-product-image", {
       method: "POST",
       body: JSON.stringify({
         image: listing.image,
         productType: listing.draft?.metadata?.detectedProductType || listing.category || "product",
         title: listing.draft?.title || listing.title,
         scene: "lifestyle",
-        customPrompt: "Create one premium lifestyle image for this existing listing. Keep one exact product only."
+        customPrompt: `${customPrompt} Keep exactly one product only. Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} area for the seller logo.`
       })
     });
+    const result = await applySellerLogo(generated);
     const imageUrl = result.publicUrl || result.image;
     listing.images = [...(listing.images?.length ? listing.images : listing.image ? [listing.image] : []), imageUrl];
     listing.image = listing.images[0] || listing.image;
@@ -1765,6 +1787,16 @@ async function saveSelectedListingImages() {
     });
     listing.imagesDirty = false;
     listing.batchRequestId = result.batchRequestId || null;
+    if (result.batchRequestId) {
+      saveRecentProductSubmission({
+        batchRequestId: result.batchRequestId,
+        barcode: listing.barcode,
+        title: `${listing.title} · image update`,
+        state: "processing",
+        message: "Trendyol accepted the image update and is processing it.",
+        submittedAt: new Date().toISOString()
+      });
+    }
     showToast(result.message || "Image update submitted to Trendyol.");
     setOperation(result.batchRequestId ? `Image update submitted. Batch ${result.batchRequestId}` : "Image update submitted");
     render();
@@ -2329,7 +2361,12 @@ async function createGeneratedImage(scene, customPrompt = "") {
       productType: state.newProductAnalysis.productType,
       title: $("#newTitle").value,
       scene,
-      customPrompt
+      customPrompt: [
+        customPrompt,
+        state.sellerLogoData
+          ? `Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} corner for the seller logo. Do not invent or redraw a logo; the app will place the exact transparent logo afterward.`
+          : ""
+      ].filter(Boolean).join(" ")
     })
   });
   const polished = await applyGeminiInfographicOverlay(generated);
@@ -2396,9 +2433,15 @@ function drawFeatureOverlay(context) {
 
 function drawDimensionOverlay(context) {
   const attributes = state.newProductAnalysis?.attributes || [];
-  const dimensions = attributes.filter((attribute) =>
+  const analyzedDimensions = attributes.filter((attribute) =>
     /(dimension|height|width|depth|size|length)/i.test(attribute.attributeName || "")
   ).slice(0, 3);
+  const enteredDimensions = [
+    { attributeName: "Height", customAttributeValue: $("#newPackageHeight").value ? `${$("#newPackageHeight").value} cm` : "" },
+    { attributeName: "Width", customAttributeValue: $("#newPackageWidth").value ? `${$("#newPackageWidth").value} cm` : "" },
+    { attributeName: "Length", customAttributeValue: $("#newPackageLength").value ? `${$("#newPackageLength").value} cm` : "" }
+  ].filter((attribute) => attribute.customAttributeValue);
+  const dimensions = enteredDimensions.length === 3 ? enteredDimensions : analyzedDimensions;
   const panelY = 1540;
   context.fillStyle = "rgba(255, 255, 255, 0.97)";
   context.fillRect(0, panelY, 1200, 260);
@@ -2757,6 +2800,9 @@ function resetNewProductForm() {
   $("#newQuantity").value = "1";
   $("#newVatRate").value = "15";
   $("#newDimensionalWeight").value = "1";
+  $("#newPackageHeight").value = "";
+  $("#newPackageWidth").value = "";
+  $("#newPackageLength").value = "";
   $("#newOrigin").value = "SA";
   $("#newProductImage").value = "";
   $("#newProductPreview").removeAttribute("src");

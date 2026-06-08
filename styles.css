@@ -1383,6 +1383,28 @@ h3 {
   color: #a12a42;
 }
 
+.listing-image-request {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.listing-image-request textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 @media (max-width: 720px) {
   .readiness-grid,
   .required-attribute-fields .form-grid {
