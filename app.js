@@ -1179,7 +1179,7 @@ function renderListingReadiness() {
     {
       label: "Price and inventory",
       detail: Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0 && Number($("#newDimensionalWeight").value) > 0
-        ? "SAR prices, stock and dimensional weight ready"
+        ? "SAR prices, stock and package size ready"
         : "Enter prices and package dimensions",
       ready: Boolean(Number($("#newListPrice").value) > 0 && Number($("#newSalePrice").value) > 0 && Number($("#newDimensionalWeight").value) > 0)
     },
@@ -2322,34 +2322,42 @@ async function generateNewProductImages() {
   }
   const button = $("#generateImagesBtn");
   button.disabled = true;
-  const scenes = ["hero", "lifestyle", "features", "angles", "white"];
+  const detectedType = displayValue(state.newProductAnalysis.productType).trim().toLowerCase();
+  const sellerDirection = $("#imageCreativeDirection").value.trim();
+  if ((!detectedType || ["product", "item", "object", "furniture"].includes(detectedType)) && sellerDirection.length < 12) {
+    button.disabled = false;
+    showToast("AI is not sure what this item is. Add the product type in Image direction, then generate images.");
+    $("#imageCreativeDirection").focus();
+    return;
+  }
+  const scenes = ["hero", "alternate", "lifestyle", "features", "size", "white"];
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
   refreshIcons();
   let completed = state.generatedProductImages.length;
   for (const scene of scenes) {
     if (state.generatedProductImages.some((item) => item.scene === scene)) continue;
-    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of 5`;
-    status.innerHTML = `<strong>${completed} of 5 images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
+    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of 6`;
+    status.innerHTML = `<strong>${completed} of 6 images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
     refreshIcons();
     try {
-      const result = await createGeneratedImage(scene, $("#imageCreativeDirection").value.trim());
+      const result = await createGeneratedImage(scene, sellerDirection);
       state.generatedProductImages.push(result);
       completed += 1;
       renderGeneratedProductImages();
       const fallbackNote = result.usedFallback ? " Pro was busy, so Gemini Flash completed this image." : "";
-      status.innerHTML = `<strong>${completed} of 5 images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
-      showToast(`${completed} of 5 created: ${result.label}${fallbackNote}`);
+      status.innerHTML = `<strong>${completed} of 6 images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
+      showToast(`${completed} of 6 created: ${result.label}${fallbackNote}`);
       renderListingReadiness();
     } catch (error) {
-      status.innerHTML = `<strong>${completed} of 5 images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
+      status.innerHTML = `<strong>${completed} of 6 images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
       showToast(error.message || `Image ${completed + 1} failed.`);
       break;
     }
   }
   button.disabled = false;
-  button.innerHTML = `<span data-lucide="images"></span> ${completed === 5 ? "Regenerate missing images" : "Continue image generation"}`;
-  setOperation(`${completed} of 5 listing images created`);
+  button.innerHTML = `<span data-lucide="images"></span> ${completed === 6 ? "Regenerate missing images" : "Continue image generation"}`;
+  setOperation(`${completed} of 6 listing images created`);
   refreshIcons();
 }
 
@@ -2369,12 +2377,12 @@ async function createGeneratedImage(scene, customPrompt = "") {
       ].filter(Boolean).join(" ")
     })
   });
-  const polished = await applyGeminiInfographicOverlay(generated);
+  const polished = await applyListingImageOverlay(generated);
   return applySellerLogo(polished);
 }
 
-async function applyGeminiInfographicOverlay(generated) {
-  if (generated.provider !== "google" || !["features", "angles"].includes(generated.scene)) return generated;
+async function applyListingImageOverlay(generated) {
+  if (!["features", "size"].includes(generated.scene)) return generated;
   const productImage = await loadCanvasImage(generated.image);
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
@@ -2437,31 +2445,45 @@ function drawDimensionOverlay(context) {
     /(dimension|height|width|depth|size|length)/i.test(attribute.attributeName || "")
   ).slice(0, 3);
   const enteredDimensions = [
-    { attributeName: "Height", customAttributeValue: $("#newPackageHeight").value ? `${$("#newPackageHeight").value} cm` : "" },
-    { attributeName: "Width", customAttributeValue: $("#newPackageWidth").value ? `${$("#newPackageWidth").value} cm` : "" },
-    { attributeName: "Length", customAttributeValue: $("#newPackageLength").value ? `${$("#newPackageLength").value} cm` : "" }
-  ].filter((attribute) => attribute.customAttributeValue);
-  const dimensions = enteredDimensions.length === 3 ? enteredDimensions : analyzedDimensions;
+    $("#newPackageHeight").value ? `${$("#newPackageHeight").value} Cm` : "",
+    $("#newPackageWidth").value ? `${$("#newPackageWidth").value} Cm` : "",
+    $("#newPackageLength").value ? `${$("#newPackageLength").value} Cm` : ""
+  ].filter(Boolean);
+  const analyzedValues = analyzedDimensions.map((attribute) =>
+    String(attribute.customAttributeValue || "").replace(/\b(width|height|length|depth)\b\s*:?\s*/gi, "").replace(/\bcm\b/gi, "Cm").trim()
+  ).filter(Boolean);
+  const dimensions = enteredDimensions.length === 3 ? enteredDimensions : analyzedValues;
+  const displayValues = dimensions.length ? dimensions.slice(0, 3) : [
+    "Front view",
+    "Side view",
+    "Back view"
+  ];
   const panelY = 1540;
   context.fillStyle = "rgba(255, 255, 255, 0.97)";
   context.fillRect(0, panelY, 1200, 260);
   context.fillStyle = "#172033";
   context.textAlign = "left";
   context.font = "700 38px Arial, sans-serif";
-  context.fillText(dimensions.length ? "Approximate dimensions" : "Consistent product views", 64, panelY + 62);
+  context.fillText(dimensions.length ? "Average size" : "Multiple product angles", 64, panelY + 62);
   context.textAlign = "right";
-  context.fillText(dimensions.length ? "الأبعاد التقريبية" : "زوايا متعددة للمنتج", 1136, panelY + 62);
-  context.font = "500 27px Arial, sans-serif";
-  context.textAlign = "left";
-  const detail = dimensions.length
-    ? dimensions.map((attribute) => `${attribute.attributeName}: ${attribute.customAttributeValue}`).join("   |   ")
-    : "Front · Side · Three-quarter · Rear";
-  context.fillText(detail.slice(0, 82), 64, panelY + 128);
+  context.fillText(dimensions.length ? "المقاس التقريبي" : "زوايا متعددة", 1136, panelY + 62);
+
+  displayValues.forEach((value, index) => {
+    const left = 64 + index * 365;
+    context.fillStyle = "#f1f4f8";
+    context.fillRect(left, panelY + 98, 320, 82);
+    context.fillStyle = "#172033";
+    context.textAlign = "center";
+    context.font = "700 34px Arial, sans-serif";
+    context.fillText(String(value).slice(0, 18), left + 160, panelY + 151);
+  });
+
   context.fillStyle = "#687387";
   context.font = "400 22px Arial, sans-serif";
-  context.fillText("Confirm exact measurements before publishing.", 64, panelY + 188);
+  context.textAlign = "left";
+  context.fillText("Confirm exact measurements before publishing.", 64, panelY + 224);
   context.textAlign = "right";
-  context.fillText("يرجى تأكيد القياسات الدقيقة قبل النشر", 1136, panelY + 188);
+  context.fillText("يرجى تأكيد القياسات الدقيقة قبل النشر", 1136, panelY + 224);
 }
 
 function translateAttributeName(name) {
@@ -2492,7 +2514,7 @@ async function saveCanvasImage(canvas, scene) {
 }
 
 async function applySellerLogo(generated) {
-  if (!state.sellerLogoData) return generated;
+  if (!state.sellerLogoData || generated.scene === "white") return generated;
   const sourceImage = generated.sourceImage || generated.image;
   const [productImage, logoImage] = await Promise.all([
     loadCanvasImage(sourceImage),
@@ -2531,13 +2553,13 @@ async function refreshGalleryBranding() {
   }
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
-  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo consistently to all generated images.</span>`;
+  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo to images 1-5 and keeping the white-background image clean.</span>`;
   try {
     state.generatedProductImages = await Promise.all(
       state.generatedProductImages.map((item) => applySellerLogo(item))
     );
     renderGeneratedProductImages();
-    status.innerHTML = `<strong>Logo updated</strong><span>The same logo position is applied to every generated image.</span>`;
+    status.innerHTML = `<strong>Logo updated</strong><span>The same logo position is applied to generated images except the final white-background image.</span>`;
   } catch (error) {
     status.innerHTML = `<strong>Logo update failed</strong><span>${escapeHtml(error.message || "Could not update the generated images.")}</span>`;
   }
@@ -2617,7 +2639,7 @@ function deleteGeneratedImage(scene) {
   state.generatedProductImages = state.generatedProductImages.filter((item) => item.scene !== scene);
   renderGeneratedProductImages();
   $("#imageGenerationStatus").classList.remove("hidden");
-  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of 5 images created</strong><span>The deleted image can be generated again.</span>`;
+  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of 6 images created</strong><span>The deleted image can be generated again.</span>`;
   showToast("Generated image removed from this listing.");
   renderListingReadiness();
 }

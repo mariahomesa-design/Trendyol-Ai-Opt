@@ -369,7 +369,7 @@
                   </button>
                   <button class="ghost-btn" id="generateImagesBtn" type="button">
                     <span data-lucide="images"></span>
-                    Generate 5 listing images
+                    Generate 6 listing images
                   </button>
                 </div>
                 <label>
@@ -447,11 +447,7 @@
                   <label>Package height (cm)<input id="newPackageHeight" type="number" min="0" step="0.1" /></label>
                   <label>Package width (cm)<input id="newPackageWidth" type="number" min="0" step="0.1" /></label>
                   <label>Package length (cm)<input id="newPackageLength" type="number" min="0" step="0.1" /></label>
-                  <label>
-                    Trendyol dimensional weight
-                    <input id="newDimensionalWeight" type="number" min="0" step="0.1" value="1" />
-                    <span class="field-note">Calculated as height × width × length ÷ 3000.</span>
-                  </label>
+                  <input id="newDimensionalWeight" type="hidden" value="1" />
                   <label>Barcode<input id="newBarcode" maxlength="40" placeholder="Enter barcode" /></label>
                   <label>Model code<input id="newModelCode" maxlength="40" placeholder="Enter model code" /></label>
                   <label>Stock code<input id="newStockCode" maxlength="100" placeholder="Enter stock code" /></label>

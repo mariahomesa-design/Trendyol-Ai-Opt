@@ -646,25 +646,29 @@ async function imageInputToBlob(image) {
 const PRODUCT_IMAGE_SCENES = {
   hero: {
     label: "Hero lifestyle image",
-    prompt: "Create the main premium marketplace hero photograph. Place the exact reference product naturally in an appropriate upscale Saudi home interior as the clear visual focus. Use believable interior scale, editorial furniture photography, realistic soft daylight, accurate contact shadows, detailed materials, restrained styling and generous clean space. No people, no text, no extra logos."
+    prompt: "Create image 1: the main premium marketplace hero photograph. Place the exact reference product naturally in the correct upscale Saudi interior for this product type: office chairs in a modern office, lounge chairs in a lounge/living room, dining chairs in a dining room, bar stools at a kitchen island or bar counter, TV tables and console tables as one item in a living room or entryway, cabinets and shoe cabinets in the correct hallway or storage space. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
+  },
+  alternate: {
+    label: "Second lifestyle angle",
+    prompt: "Create image 2: a second premium lifestyle photograph of the same exact reference product from another direction in the same type of correct room. No people and no text. If the product is a dining chair, bar stool or simple set-friendly seating item, show a realistic saleable set such as 2, 4, 6 or 8 pieces only when it makes commercial sense. If the product is a TV table, console table, cabinet, shoe cabinet, coffee table, side table, lamp or single furniture piece, show exactly one product only. Keep the product fully visible, sharp, realistic and luxury-brand quality, with clean corner space for the seller logo."
   },
   lifestyle: {
-    label: "Lifestyle image",
-    prompt: "Create a second premium lifestyle photograph showing exactly ONE instance of the reference product in believable everyday use. Never add a second copy, mirrored copy, background copy, matching pair or partial duplicate of the product. Choose a natural setting appropriate to the item. If a person is useful for scale, show only one natural, anatomically correct adult interacting realistically with the single product. Use luxury furniture-brand commercial photography, accurate perspective, crisp product detail, realistic lighting and no text or extra logos."
+    label: "Third lifestyle image",
+    prompt: "Create image 3: another premium lifestyle photograph without humans. Place the exact reference product in a different realistic composition that still fits the product type and Saudi marketplace taste. Show exactly one product unless the seller specifically requested a set. Never add mirrored copies, background duplicates or unrelated matching items. Use luxury furniture-brand commercial photography, accurate lens perspective, crisp product detail, realistic lighting, natural shadows, no text and clean corner space for the seller logo."
   },
   features: {
     label: "Bilingual features image",
-    prompt: "Create a polished premium product feature image with a clean editorial infographic layout. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio background. Show only clearly visible features using short, perfectly legible labels in both English and Arabic. Use refined typography, clean leader lines and balanced spacing.",
-    geminiPrompt: "Create a clean premium product feature layout. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
+    prompt: "Create image 4: a premium lifestyle feature image without humans. Keep the exact reference product large, sharp and unchanged in a clean bright interior or studio-lifestyle background. Leave generous uncluttered space around the product for the app to add bilingual English and Arabic feature labels. Do not render words, letters, arrows, badges, measurements or extra logos yourself. Keep clean corner space for the seller logo.",
+    geminiPrompt: "Create image 4: a clean premium lifestyle product feature background. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio-lifestyle background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
   },
-  angles: {
-    label: "Four angles and size image",
-    prompt: "Create a high-end catalog contact sheet with four consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Add restrained, perfectly legible approximate dimension labels in English and Arabic.",
-    geminiPrompt: "Create a high-end catalog contact sheet with four consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
+  size: {
+    label: "Size and angle image",
+    prompt: "Create image 5: a high-end white-background catalog size image with multiple consistent views of the exact same reference product, such as front, side, three-quarter and rear or top as appropriate. Keep every view identical in color, material, pattern and construction, with balanced spacing and no overlap. Do not render words, arrows, measurements or logos; the app will add simple average size values afterward.",
+    geminiPrompt: "Create image 5: a high-end white-background catalog contact sheet with multiple consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
   },
   white: {
     label: "Pure white background image",
-    prompt: "Create a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text and no extra logos."
+    prompt: "Create image 6: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and no logo."
   }
 };
 
@@ -685,8 +689,8 @@ async function generateProductImage({ image, productType, title, scene, customPr
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
-    "Do not duplicate the product unless the requested four-angle contact sheet explicitly requires multiple consistent views.",
-    scene === "lifestyle" ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    "Do not duplicate the product unless the requested set-friendly alternate image or size contact sheet explicitly requires multiple consistent views.",
+    ["hero", "lifestyle", "features", "white"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
