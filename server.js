@@ -645,6 +645,17 @@ async function imageInputToBlob(image) {
 
 const FURNITURE_IMAGE_GUIDES = [
   {
+    name: "dining chair",
+    match: ["dining chair", "dining chairs", "kitchen chair", "cane dining chair", "rattan dining chair", "كرسي طعام", "كراسي طعام"],
+    scenes: {
+      diningChairHero: "Image 1: close dining-room lifestyle hero. One dining chair is the main subject beside a dining table, with another matching chair partially visible when natural. Keep the same realistic photographer composition style: bright daylight, warm natural wood, white walls, large windows, rug, table decor, sharp HD detail and no humans.",
+      diningChairSet: "Image 2: full dining room lifestyle set. Show a saleable set of four to six matching dining chairs around a dining table in the same bright room family, captured straight-on like a professional furniture catalog photo. The room decor can change, but the camera height, clean composition and realistic photographer quality must stay consistent.",
+      diningChairRoomAngle: "Image 3: elevated wide dining-room angle. Show the same dining chair design as a full dining setup from above or a higher corner angle, with the dining table, rug, windows and sideboard visible. It must look like the same photoshoot in one real room, not a render or collage.",
+      diningChairAlternateAngle: "Image 4: alternate close lifestyle angle. Capture the dining chair beside the dining table from another realistic photographer angle, showing chair back/seat detail, table edge, rug and room context. Keep it sharp, natural and consistent with the same room-series look.",
+      white: "Image 5: clean HD marketplace catalog image on a pure white background. Show exactly one dining chair, fully visible at a flattering three-quarter front angle, crisp cane/rattan/wood/fabric texture, accurate shape, no props, no logo, no text and subtle contact shadow."
+    }
+  },
+  {
     name: "sofa",
     match: ["sofa", "couch", "loveseat", "sectional", "كنبة", "اريكة"],
     scenes: {
@@ -760,6 +771,22 @@ function imageGuideFor(productType, title) {
 }
 
 const PRODUCT_IMAGE_SCENES = {
+  diningChairHero: {
+    label: "Dining chair hero",
+    prompt: "Create image 1 for a dining chair: a premium realistic dining-room lifestyle photograph. Place the exact reference chair beside a dining table as the main subject, with one matching chair partially visible only if it feels natural. Match this style: professional furniture photographer, bright natural daylight through large windows, warm wood floor, white or soft neutral walls, light rug, clean table styling, crisp cane/rattan/wood/fabric detail, accurate shadows, no humans and no text. Keep the chair fully clear and sharp. The room environment may vary between listings, but composition, camera height and chair placement must feel like a real catalog photoshoot series."
+  },
+  diningChairSet: {
+    label: "Dining chair set lifestyle",
+    prompt: "Create image 2 for a dining chair: a full dining room lifestyle set photograph. Use the exact reference chair design as a saleable set of four to six matching chairs around a dining table. Keep all chairs consistent in shape, material, color, woven pattern, cushion and legs. Use a bright realistic dining room with windows, rug, table decor and warm natural wood. Straight professional catalog composition, sharp HD detail, no humans, no text, no distorted chairs, no duplicate artifacts."
+  },
+  diningChairRoomAngle: {
+    label: "Dining room wide angle",
+    prompt: "Create image 3 for a dining chair: an elevated wide-angle dining-room photograph from another photographer angle. Show the same reference chair design around the table in a complete realistic room with rug, sideboard or cabinet, windows and soft daylight. It should look like the same product photoshoot in one room, captured from above or a higher corner angle. Keep furniture scale correct, materials sharp, no humans, no text and no AI blur."
+  },
+  diningChairAlternateAngle: {
+    label: "Dining chair alternate angle",
+    prompt: "Create image 4 for a dining chair: a close alternate lifestyle photograph from another realistic camera angle. Place the exact chair beside the dining table, showing the chair back, seat cushion, legs and table edge with room context. Keep the same bright dining room photoshoot feeling, natural daylight, realistic lens perspective, crisp product texture, no humans, no text, no extra logos and no distorted duplicated chairs."
+  },
   hero: {
     label: "Hero lifestyle image",
     prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
@@ -808,6 +835,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
   const prompt = [
     `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
+    guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",

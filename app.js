@@ -1215,6 +1215,7 @@ function renderListingReadiness() {
   const container = $("#listingReadinessItems");
   if (!container) return;
   const attributes = readNewProductAttributes();
+  const expectedImages = getRequiredProductImageScenes().length;
   const publicImages = state.generatedProductImages.length > 0 && state.generatedProductImages.every((item) =>
     /^https:\/\//i.test(item.publicUrl || item.image)
   );
@@ -1240,9 +1241,9 @@ function renderListingReadiness() {
     {
       label: "Public product images",
       detail: publicImages
-        ? `${state.generatedProductImages.length} public image${state.generatedProductImages.length === 1 ? "" : "s"} ready`
+        ? `${state.generatedProductImages.length} of ${expectedImages} public images ready`
         : state.generatedProductImages.length
-          ? "Open the deployed Railway app to publish"
+          ? `${state.generatedProductImages.length} of ${expectedImages} images created. Open the deployed Railway app to publish`
           : "Generate listing images",
       ready: publicImages
     },
@@ -2398,6 +2399,28 @@ async function analyzeNewProduct() {
   }
 }
 
+function newProductImageProfileText() {
+  return [
+    state.newProductAnalysis?.productType,
+    $("#newTitle")?.value,
+    $("#imageCreativeDirection")?.value
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function isDiningChairImageProfile() {
+  const text = newProductImageProfileText();
+  return /\b(dining|kitchen)\s+chairs?\b/.test(text)
+    || /\bchairs?\s+(for|with)\s+dining\b/.test(text)
+    || /كرسي\s*طعام|كراسي\s*طعام/.test(text);
+}
+
+function getRequiredProductImageScenes() {
+  if (isDiningChairImageProfile()) {
+    return ["diningChairHero", "diningChairSet", "diningChairRoomAngle", "diningChairAlternateAngle", "white"];
+  }
+  return ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
+}
+
 async function generateNewProductImages() {
   if (!state.newProductImageData || !state.newProductAnalysis) {
     showToast("Analyze the main product image first.");
@@ -2417,15 +2440,16 @@ async function generateNewProductImages() {
     $("#imageCreativeDirection").focus();
     return;
   }
-  const scenes = ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
+  const scenes = getRequiredProductImageScenes();
+  const totalImages = scenes.length;
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
   refreshIcons();
-  let completed = state.generatedProductImages.length;
+  let completed = state.generatedProductImages.filter((item) => scenes.includes(item.scene)).length;
   for (const scene of scenes) {
     if (state.generatedProductImages.some((item) => item.scene === scene)) continue;
-    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of 7`;
-    status.innerHTML = `<strong>${completed} of 7 images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
+    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of ${totalImages}`;
+    status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
     refreshIcons();
     try {
       const result = await createGeneratedImage(scene, sellerDirection);
@@ -2433,18 +2457,18 @@ async function generateNewProductImages() {
       completed += 1;
       renderGeneratedProductImages();
       const fallbackNote = result.usedFallback ? " Pro was busy, so Gemini Flash completed this image." : "";
-      status.innerHTML = `<strong>${completed} of 7 images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
-      showToast(`${completed} of 7 created: ${result.label}${fallbackNote}`);
+      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
+      showToast(`${completed} of ${totalImages} created: ${result.label}${fallbackNote}`);
       renderListingReadiness();
     } catch (error) {
-      status.innerHTML = `<strong>${completed} of 7 images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
+      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
       showToast(error.message || `Image ${completed + 1} failed.`);
       break;
     }
   }
   button.disabled = false;
-  button.innerHTML = `<span data-lucide="images"></span> ${completed === 7 ? "Regenerate missing images" : "Continue image generation"}`;
-  setOperation(`${completed} of 7 listing images created`);
+  button.innerHTML = `<span data-lucide="images"></span> ${completed === totalImages ? "Regenerate missing images" : "Continue image generation"}`;
+  setOperation(`${completed} of ${totalImages} listing images created`);
   refreshIcons();
 }
 
@@ -2724,9 +2748,10 @@ function closeImageLightbox() {
 
 function deleteGeneratedImage(scene) {
   state.generatedProductImages = state.generatedProductImages.filter((item) => item.scene !== scene);
+  const expectedImages = getRequiredProductImageScenes().length;
   renderGeneratedProductImages();
   $("#imageGenerationStatus").classList.remove("hidden");
-  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of 7 images created</strong><span>The deleted image can be generated again.</span>`;
+  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of ${expectedImages} images created</strong><span>The deleted image can be generated again.</span>`;
   showToast("Generated image removed from this listing.");
   renderListingReadiness();
 }
