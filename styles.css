@@ -2374,6 +2374,99 @@ body {
   font-size: 12px;
 }
 
+.category-directory {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.category-directory-heading,
+.category-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.category-directory-heading strong {
+  display: block;
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.category-directory-heading span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.category-search-row .compact-search {
+  flex: 1;
+}
+
+.category-search-row select {
+  width: 180px;
+}
+
+.category-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.category-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.category-table th,
+.category-table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.category-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.category-table tbody tr[data-category-id] {
+  cursor: pointer;
+}
+
+.category-table tbody tr[data-category-id]:hover,
+.category-table tbody tr.selected {
+  background: var(--brand-soft);
+}
+
+.category-table td:first-child {
+  width: 82px;
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.category-table td span {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .create-layout + .recently-listed-panel {
   max-width: 1100px;
 }
@@ -2401,6 +2494,7 @@ body {
 .settings-form textarea,
 .settings-form select,
 .rewrite-preview textarea,
+.category-search-row select,
 .compact-search,
 .image-edit-prompt {
   border-color: var(--line);
@@ -2462,6 +2556,16 @@ body {
 
   #newProductForm .form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .category-directory-heading,
+  .category-search-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .category-search-row select {
+    width: 100%;
   }
 }
 

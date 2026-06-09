@@ -180,6 +180,9 @@ const state = {
   publicImageHosting: false,
   latestProductSubmission: null,
   recentProductSubmissions: [],
+  categoryDirectory: [],
+  categoryDirectoryLoadedAt: 0,
+  categoryDirectoryLoading: false,
   batchPollTimer: null,
   sellerLogoData: "",
   sellerLogoPosition: "top-left",
@@ -206,6 +209,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const SESSION_STORAGE_KEY = "trendlift-timed-session";
+const CATEGORY_DIRECTORY_STORAGE_KEY = "trendlift-category-directory";
 const SESSION_CATALOG_LIMIT = 5000;
 
 const els = {
@@ -298,6 +302,9 @@ function bindEvents() {
   $("#checkProductBatchBtn").addEventListener("click", checkLatestProductBatch);
   $("#listAnotherProductBtn").addEventListener("click", resetNewProductForm);
   $("#recentBatchSearch").addEventListener("input", renderRecentlyListedProducts);
+  $("#refreshCategoryDirectoryBtn").addEventListener("click", () => loadCategoryDirectory({ force: true }));
+  $("#categoryDirectorySearch").addEventListener("input", renderCategoryDirectory);
+  $("#categoryDirectoryFilter").addEventListener("change", renderCategoryDirectory);
   $("#newTitle").addEventListener("input", updateNewTitleCount);
   $("#newCategoryId").addEventListener("change", prepareProductAttributes);
   $("#newBrandId").addEventListener("change", () => {
@@ -426,12 +433,15 @@ function persistSessionState(update = {}) {
 
 function clearTimedSession(showMessage = false) {
   localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(CATEGORY_DIRECTORY_STORAGE_KEY);
   state.connected = false;
   state.mode = "none";
   state.selectedId = null;
   state.listings = [];
   state.importedRows = [];
   state.keywordDataset = [];
+  state.categoryDirectory = [];
+  state.categoryDirectoryLoadedAt = 0;
   state.lastSyncMessage = "";
   $("#sellerId").value = "";
   $("#apiKey").value = "";
@@ -439,6 +449,7 @@ function clearTimedSession(showMessage = false) {
   $("#openAiApiKey").value = "";
   $("#googleAiApiKey").value = "";
   $("#ideogramApiKey").value = "";
+  renderCategoryDirectory();
   if (showMessage) {
     showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
     setOperation("Session expired");
@@ -643,6 +654,7 @@ function setView(view) {
   };
   els.viewEyebrow.textContent = titles[view][0];
   els.viewTitle.textContent = titles[view][1];
+  if (view === "create") loadCategoryDirectory();
   render();
 }
 
@@ -1085,6 +1097,123 @@ function calculateTrendyolDimensionalWeight() {
   if (!(height > 0 && width > 0 && length > 0)) return;
   $("#newDimensionalWeight").value = Math.max(1, Math.ceil((height * width * length) / 3000 * 10) / 10);
   renderListingReadiness();
+}
+
+function readCachedCategoryDirectory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CATEGORY_DIRECTORY_STORAGE_KEY) || "null");
+    if (!saved || Date.now() - Number(saved.createdAt || 0) > SESSION_TIMEOUT_MS) return [];
+    return Array.isArray(saved.categories) ? saved.categories : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedCategoryDirectory(categories) {
+  try {
+    localStorage.setItem(CATEGORY_DIRECTORY_STORAGE_KEY, JSON.stringify({
+      createdAt: Date.now(),
+      categories
+    }));
+  } catch {
+    showToast("Category list is too large for browser cache. It will reload when needed.");
+  }
+}
+
+async function loadCategoryDirectory({ force = false } = {}) {
+  if (state.categoryDirectoryLoading) return;
+  const status = $("#categoryDirectoryStatus");
+  if (!force && state.categoryDirectory.length) {
+    renderCategoryDirectory();
+    return;
+  }
+  if (!force) {
+    const cached = readCachedCategoryDirectory();
+    if (cached.length) {
+      state.categoryDirectory = cached;
+      state.categoryDirectoryLoadedAt = Date.now();
+      status.textContent = `${cached.length} cached Trendyol categories loaded.`;
+      renderCategoryDirectory();
+      return;
+    }
+  }
+  if (state.mode !== "live") {
+    status.textContent = "Connect your live Trendyol store to load all Saudi categories.";
+    renderCategoryDirectory();
+    return;
+  }
+  state.categoryDirectoryLoading = true;
+  status.textContent = "Loading all Trendyol Saudi categories...";
+  $("#refreshCategoryDirectoryBtn").disabled = true;
+  renderCategoryDirectory();
+  try {
+    const result = await apiFetch(`/api/categories?language=${state.settings.languageMode}`);
+    const categories = result.categories || [];
+    state.categoryDirectory = categories;
+    state.categoryDirectoryLoadedAt = Date.now();
+    writeCachedCategoryDirectory(categories);
+    status.textContent = `${categories.length} Trendyol categories loaded A-Z.`;
+    showToast(`Loaded ${categories.length} Trendyol categories.`);
+  } catch (error) {
+    status.textContent = error.message || "Could not load Trendyol categories.";
+    showToast(error.message || "Could not load Trendyol categories.");
+  } finally {
+    state.categoryDirectoryLoading = false;
+    $("#refreshCategoryDirectoryBtn").disabled = false;
+    renderCategoryDirectory();
+    refreshIcons();
+  }
+}
+
+function renderCategoryDirectory() {
+  const tbody = $("#categoryDirectoryRows");
+  if (!tbody) return;
+  const query = $("#categoryDirectorySearch")?.value.trim().toLowerCase() || "";
+  const leafOnly = $("#categoryDirectoryFilter")?.value !== "all";
+  let rows = state.categoryDirectory;
+  if (leafOnly) rows = rows.filter((category) => category.leaf);
+  if (query) {
+    rows = rows.filter((category) =>
+      [category.id, category.name, category.path].join(" ").toLowerCase().includes(query)
+    );
+  }
+  const visible = rows.slice(0, 150);
+  if (!state.categoryDirectory.length && state.categoryDirectoryLoading) {
+    tbody.innerHTML = `<tr><td colspan="3">Loading categories...</td></tr>`;
+    return;
+  }
+  if (!state.categoryDirectory.length) {
+    tbody.innerHTML = `<tr><td colspan="3">No categories loaded yet. Click Load categories after connecting Trendyol.</td></tr>`;
+    return;
+  }
+  if (!visible.length) {
+    tbody.innerHTML = `<tr><td colspan="3">No category matches your search.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = visible.map((category) => `
+    <tr class="${category.leaf ? "leaf" : "parent"}" data-category-id="${Number(category.id)}">
+      <td>${Number(category.id)}</td>
+      <td>${escapeHtml(category.name)}${category.leaf ? "" : " <span>Parent</span>"}</td>
+      <td>${escapeHtml(category.path || category.name)}</td>
+    </tr>
+  `).join("");
+  $$("#categoryDirectoryRows tr[data-category-id]").forEach((row) => {
+    row.addEventListener("click", () => selectCategoryDirectoryRow(Number(row.dataset.categoryId)));
+  });
+}
+
+async function selectCategoryDirectoryRow(categoryId) {
+  const category = state.categoryDirectory.find((item) => Number(item.id) === categoryId);
+  if (!category) return;
+  if (!category.leaf) {
+    showToast("This is a parent category. Select the lowest-level category for Trendyol listing.");
+  }
+  $("#newCategoryId").value = category.id;
+  $("#newSuggestedCategory").value = category.path || category.name;
+  $$("#categoryDirectoryRows tr").forEach((row) => row.classList.toggle("selected", Number(row.dataset.categoryId) === Number(category.id)));
+  setOperation(`Selected category ${category.id}: ${category.path || category.name}`);
+  renderListingReadiness();
+  await prepareProductAttributes();
 }
 
 async function loadCategorySuggestions(query) {

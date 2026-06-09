@@ -418,6 +418,41 @@
                   <h2>Product information</h2>
                 </div>
               </div>
+              <section class="category-directory" aria-labelledby="categoryDirectoryTitle">
+                <div class="category-directory-heading">
+                  <div>
+                    <strong id="categoryDirectoryTitle">Trendyol category directory</strong>
+                    <span id="categoryDirectoryStatus">Connect your store to load all Saudi categories.</span>
+                  </div>
+                  <button class="ghost-btn" id="refreshCategoryDirectoryBtn" type="button">
+                    <span data-lucide="refresh-cw"></span>
+                    Load categories
+                  </button>
+                </div>
+                <div class="category-search-row">
+                  <input id="categoryDirectorySearch" class="compact-search" placeholder="Search by category ID, name or path" />
+                  <select id="categoryDirectoryFilter" aria-label="Category filter">
+                    <option value="leaf">Leaf categories only</option>
+                    <option value="all">All categories A-Z</option>
+                  </select>
+                </div>
+                <div class="category-table-wrap">
+                  <table class="category-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Full path</th>
+                      </tr>
+                    </thead>
+                    <tbody id="categoryDirectoryRows">
+                      <tr>
+                        <td colspan="3">No categories loaded yet.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
               <form class="settings-form" id="newProductForm">
                 <div class="warning-box hidden" id="newProductWarning"></div>
                 <label class="span-full">

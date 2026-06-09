@@ -50,6 +50,7 @@ const session = {
   environment: process.env.TRENDYOL_ENV || "prod",
   storeFrontCode: process.env.TRENDYOL_STOREFRONT_CODE || "SA"
 };
+const categoryCache = new Map();
 
 function rootUrl() {
   return session.environment === "stage"
@@ -443,6 +444,22 @@ function categoryMatchScore(category, query) {
   return queryWords.reduce((score, word) => score + (text.includes(word) ? 4 : 0), 0)
     + (text.includes(String(query || "").toLowerCase()) ? 10 : 0)
     + (category.leaf ? 2 : 0);
+}
+
+async function fetchProductCategories(language = "en") {
+  const cacheKey = `${session.environment}:${session.storeFrontCode || "SA"}:${language}`;
+  const cached = categoryCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < 30 * 60 * 1000) return cached.categories;
+  const body = await trendyolFetch("/integration/product/product-categories", {
+    method: "GET",
+    storeFrontCode: "SA",
+    acceptLanguage: language
+  });
+  const categories = flattenCategories(body.categories || body.content || body)
+    .filter((category) => category.id && category.name)
+    .sort((a, b) => String(a.path || a.name).localeCompare(String(b.path || b.name), language));
+  categoryCache.set(cacheKey, { createdAt: Date.now(), categories });
+  return categories;
 }
 
 function normalizedAttributeText(value) {
@@ -1352,18 +1369,24 @@ async function handleApi(req, res, url) {
         return;
       }
       const language = url.searchParams.get("language") === "ar" ? "ar" : "en";
-      const body = await trendyolFetch("/integration/product/product-categories", {
-        method: "GET",
-        storeFrontCode: "SA",
-        acceptLanguage: language
-      });
-      const categories = flattenCategories(body.categories || body.content || body)
-        .filter((category) => category.id && category.name)
+      const categories = (await fetchProductCategories(language))
         .map((category) => ({ ...category, score: categoryMatchScore(category, query) }))
         .filter((category) => category.score > 0)
         .sort((a, b) => b.score - a.score || Number(b.leaf) - Number(a.leaf))
         .slice(0, 8);
       sendJson(res, 200, { ok: true, query, categories });
+      return;
+    }
+
+    if (url.pathname === "/api/categories" && req.method === "GET") {
+      const language = url.searchParams.get("language") === "ar" ? "ar" : "en";
+      const categories = await fetchProductCategories(language);
+      sendJson(res, 200, {
+        ok: true,
+        language,
+        count: categories.length,
+        categories
+      });
       return;
     }
 
