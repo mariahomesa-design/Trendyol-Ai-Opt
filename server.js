@@ -684,6 +684,17 @@ const FURNITURE_IMAGE_GUIDES = [
     }
   },
   {
+    name: "decorative vase",
+    match: ["vase", "flower vase", "ceramic vase", "decorative vase", "ribbed vase", "مزهرية", "فازة"],
+    scenes: {
+      vaseHero: "Image 1: clear lifestyle hero of the vase as the main focus on a light table or corner surface, soft beige/white wall background, natural light, flowers or dried stems inside, clean realistic texture and premium minimal home styling.",
+      vaseLifestyle: "Image 2: second clear lifestyle photo with the same vase design in a warm beige/white decor setting, shallow background, dried flowers or pampas, and a second matching vase only if it helps show the set. Keep the product sharp and premium.",
+      vaseFeatures: "Image 3: feature/detail image showing ribbed texture and minimalist design with clean beige background and space for app-added labels. Product texture must be sharp, elegant and close-up.",
+      vaseSize: "Image 4: clean size base image on white background with the vase fully visible and enough blank space for the app to add cm measurement lines and the +/-2 cm note. Do not render inches or any text yourself.",
+      vaseWhite: "Image 5: pure white-background catalog image of exactly one vase, very clear, product fills the frame tastefully, ribbed texture sharp, no flowers, no props, no text and no logo."
+    }
+  },
+  {
     name: "sofa",
     match: ["sofa", "couch", "loveseat", "sectional", "كنبة", "اريكة"],
     scenes: {
@@ -836,6 +847,28 @@ const PRODUCT_IMAGE_SCENES = {
     label: "Mirror white background",
     prompt: "Create image 5 for a hanging wall mirror: a very clear HD marketplace catalog photograph on a pure white background. Show exactly one mirror centered and fully visible, front-facing or very slight three-quarter if needed to show frame thickness. Preserve the exact shape, frame color, thickness, mirror surface and proportions from the reference. No props, no text, no humans, no logo, clean soft shadow only."
   },
+  vaseHero: {
+    label: "Vase lifestyle hero",
+    prompt: "Create image 1 for a decorative vase: a clear premium lifestyle hero photograph. Place the exact reference vase as the main focus on a light table, shelf or clean corner surface against a soft beige/white wall. Add tasteful dried stems, flowers or pampas inside only if suitable for the vase, with natural daylight, soft shadows, realistic ceramic/glass/stone texture, and clean minimal home styling. No humans, no text, no extra logos. Keep the vase shape, ribbed texture, color, opening and proportions faithful to the reference."
+  },
+  vaseLifestyle: {
+    label: "Vase lifestyle",
+    prompt: "Create image 2 for a decorative vase: a second clear lifestyle photograph in the same warm minimal home style. Show the vase with dried flowers or pampas on a white/light table surface, soft beige background and shallow depth of field. A second matching vase may appear only if the product is a set or if it helps show styling; keep every vase consistent with the reference. Premium realistic product photography, no humans, no text, no logo, no distorted shapes."
+  },
+  vaseFeatures: {
+    label: "Vase feature detail",
+    prompt: "Create image 3 for a decorative vase: a feature/detail base image focused on the vase texture and minimalist design. Show close-up ribbed texture, opening, base or side profile on a clean beige/cream background. Leave clean space for the app to add feature labels such as Ribbed Texture and Minimalist Design. Do not render words, letters, badges, arrows or logos yourself. Keep ceramic/material texture sharp and premium.",
+    geminiPrompt: "Create image 3 for a decorative vase: clean feature/detail base image, close-up ribbed texture and minimalist design on beige/cream background with empty space for labels. Do not render text, letters, badges, arrows or logos."
+  },
+  vaseSize: {
+    label: "Vase cm dimensions",
+    prompt: "Create image 4 for a decorative vase: a clean product size base image on white/light background. Show the exact vase fully visible, upright and centered, with enough blank space around it for the app to add measurement lines, cm values and a size tolerance note. Do not render text, numbers, inch marks, arrows, measurement lines, reference cans or logos yourself. Keep the vase texture and shape accurate.",
+    geminiPrompt: "Create image 4 for a decorative vase: clean white/light product-size base image, one upright centered vase, fully visible, accurate shape and ribbed texture, generous blank space for measurement overlay. Do not render text, numbers, inches, arrows, logos or measurement lines."
+  },
+  vaseWhite: {
+    label: "Vase white background",
+    prompt: "Create image 5 for a decorative vase: a very clear HD marketplace catalog photograph on a pure white background. Show exactly one vase only, no flowers, no props, centered and filling the frame tastefully, with accurate ribbed texture, opening, base, material color and proportions. No text, no humans, no logo, clean soft contact shadow only."
+  },
   hero: {
     label: "Hero lifestyle image",
     prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
@@ -886,11 +919,12 @@ async function generateProductImage({ image, productType, title, scene, customPr
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
     guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
     guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: create a realistic premium home photoshoot series. The mirror must stay the same size, shape, frame color and thickness across all images. Lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home, above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. Detail and catalog images must be extra sharp and never blurry." : "",
+    guide.name === "decorative vase" ? "Decorative vase approved style reference: create a clear premium ecommerce photoshoot series. Lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. Feature images should show ribbed texture and minimalist design. Size and white-background images must be clean, bright and uncluttered." : "",
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
-    ["hero", "features", "detail", "benefits", "white", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    ["hero", "features", "detail", "benefits", "white", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",

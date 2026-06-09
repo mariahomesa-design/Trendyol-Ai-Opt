@@ -2550,12 +2550,21 @@ function isWallMirrorImageProfile() {
     || /مرآة\s*(جدارية|حائط)|مراية\s*(جدارية|حائط)/.test(text);
 }
 
+function isVaseImageProfile() {
+  const text = newProductImageProfileText();
+  return /\b(flower|ceramic|decorative|ribbed)?\s*vases?\b/.test(text)
+    || /مزهرية|فازة/.test(text);
+}
+
 function getRequiredProductImageScenes() {
   if (isDiningChairImageProfile()) {
     return ["diningChairHero", "diningChairSet", "diningChairRoomAngle", "diningChairAlternateAngle", "white"];
   }
   if (isWallMirrorImageProfile()) {
     return ["wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite"];
+  }
+  if (isVaseImageProfile()) {
+    return ["vaseHero", "vaseLifestyle", "vaseFeatures", "vaseSize", "vaseWhite"];
   }
   return ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
 }
@@ -2632,7 +2641,7 @@ async function createGeneratedImage(scene, customPrompt = "") {
 }
 
 async function applyListingImageOverlay(generated) {
-  if (!["features", "size", "wallMirrorSize"].includes(generated.scene)) return generated;
+  if (!["features", "size", "wallMirrorSize", "vaseFeatures", "vaseSize"].includes(generated.scene)) return generated;
   const productImage = await loadCanvasImage(generated.image);
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
@@ -2640,10 +2649,10 @@ async function applyListingImageOverlay(generated) {
   const context = canvas.getContext("2d");
   context.drawImage(productImage, 0, 0, canvas.width, canvas.height);
 
-  if (generated.scene === "features") {
+  if (["features", "vaseFeatures"].includes(generated.scene)) {
     drawFeatureOverlay(context);
   } else {
-    drawDimensionOverlay(context);
+    drawDimensionOverlay(context, generated.scene);
   }
   const saved = await saveCanvasImage(canvas, generated.scene);
   return {
@@ -2689,7 +2698,7 @@ function drawFeatureOverlay(context) {
   });
 }
 
-function drawDimensionOverlay(context) {
+function drawDimensionOverlay(context, scene = "size") {
   const attributes = state.newProductAnalysis?.attributes || [];
   const analyzedDimensions = attributes.filter((attribute) =>
     /(dimension|height|width|depth|size|length)/i.test(attribute.attributeName || "")
@@ -2731,9 +2740,15 @@ function drawDimensionOverlay(context) {
   context.fillStyle = "#687387";
   context.font = "400 22px Arial, sans-serif";
   context.textAlign = "left";
-  context.fillText("Confirm exact measurements before publishing.", 64, panelY + 224);
+  const note = scene === "vaseSize"
+    ? "Size may vary by -2 cm / +2 cm."
+    : "Confirm exact measurements before publishing.";
+  const noteAr = scene === "vaseSize"
+    ? "قد يختلف المقاس بمقدار -2 سم / +2 سم"
+    : "يرجى تأكيد القياسات الدقيقة قبل النشر";
+  context.fillText(note, 64, panelY + 224);
   context.textAlign = "right";
-  context.fillText("يرجى تأكيد القياسات الدقيقة قبل النشر", 1136, panelY + 224);
+  context.fillText(noteAr, 1136, panelY + 224);
 }
 
 function translateAttributeName(name) {
@@ -2764,7 +2779,7 @@ async function saveCanvasImage(canvas, scene) {
 }
 
 async function applySellerLogo(generated) {
-  if (!state.sellerLogoData || ["white", "wallMirrorWhite"].includes(generated.scene)) return generated;
+  if (!state.sellerLogoData || ["white", "wallMirrorWhite", "vaseWhite"].includes(generated.scene)) return generated;
   const sourceImage = generated.sourceImage || generated.image;
   const [productImage, logoImage] = await Promise.all([
     loadCanvasImage(sourceImage),
