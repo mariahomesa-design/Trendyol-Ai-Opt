@@ -2649,7 +2649,11 @@ async function applyListingImageOverlay(generated) {
   const context = canvas.getContext("2d");
   context.drawImage(productImage, 0, 0, canvas.width, canvas.height);
 
-  if (["features", "vaseFeatures"].includes(generated.scene)) {
+  if (generated.scene === "vaseFeatures") {
+    drawVaseFeatureOverlay(context);
+  } else if (generated.scene === "vaseSize") {
+    drawVaseSizeOverlay(context);
+  } else if (generated.scene === "features") {
     drawFeatureOverlay(context);
   } else {
     drawDimensionOverlay(context, generated.scene);
@@ -2696,6 +2700,97 @@ function drawFeatureOverlay(context) {
     context.font = "600 22px Arial, sans-serif";
     context.fillText(String(attribute.attributeNameAr || translateAttributeName(attribute.attributeName)).slice(0, 34), left + columnWidth - 22, top + 105);
   });
+}
+
+function drawVaseFeatureOverlay(context) {
+  context.save();
+  context.fillStyle = "#111111";
+  context.textAlign = "left";
+  context.font = "700 64px Georgia, 'Times New Roman', serif";
+  context.fillText("Ribbed", 92, 185);
+  context.fillText("Texture", 92, 270);
+
+  context.textAlign = "right";
+  context.fillText("Minimalist", 1110, 1445);
+  context.fillText("Design", 1110, 1530);
+
+  context.strokeStyle = "rgba(255, 255, 255, 0.96)";
+  context.lineWidth = 34;
+  context.beginPath();
+  context.moveTo(-30, 760);
+  context.bezierCurveTo(250, 700, 425, 820, 650, 760);
+  context.bezierCurveTo(850, 706, 1010, 710, 1230, 635);
+  context.stroke();
+  context.restore();
+}
+
+function roundedRectPath(context, x, y, width, height, radius) {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+function dimensionValueFromInput(id) {
+  const value = String($(`#${id}`)?.value || "").trim();
+  if (!value) return "";
+  return `${value.replace(/\s*cm$/i, "")} Cm`;
+}
+
+function drawVaseSizeOverlay(context) {
+  const height = dimensionValueFromInput("newPackageHeight");
+  const width = dimensionValueFromInput("newPackageWidth") || dimensionValueFromInput("newPackageLength");
+  const heightLabel = height || "Average height";
+  const widthLabel = width || "Average width";
+
+  context.save();
+  context.fillStyle = "rgba(145, 145, 145, 0.92)";
+  roundedRectPath(context, 42, 54, 390, 76, 18);
+  context.fill();
+  context.fillStyle = "#ffffff";
+  context.font = "500 48px Arial, sans-serif";
+  context.textAlign = "center";
+  context.fillText("PRODUCT SIZE", 237, 108);
+
+  context.strokeStyle = "#111111";
+  context.lineWidth = 8;
+  context.lineCap = "square";
+  context.beginPath();
+  context.moveTo(185, 430);
+  context.lineTo(185, 1328);
+  context.moveTo(170, 430);
+  context.lineTo(200, 430);
+  context.moveTo(170, 1328);
+  context.lineTo(200, 1328);
+  context.moveTo(320, 1390);
+  context.lineTo(760, 1390);
+  context.moveTo(320, 1374);
+  context.lineTo(320, 1406);
+  context.moveTo(760, 1374);
+  context.lineTo(760, 1406);
+  context.stroke();
+
+  context.fillStyle = "#111111";
+  context.font = "700 46px Georgia, 'Times New Roman', serif";
+  context.textAlign = "left";
+  context.fillText(heightLabel, 205, 420);
+  context.textAlign = "center";
+  context.fillText(widthLabel, 540, 1456);
+
+  context.font = "400 32px Arial, sans-serif";
+  context.textAlign = "left";
+  context.fillText("Note: Size may vary by -2 cm / +2 cm.", 650, 620);
+  context.font = "400 24px Arial, sans-serif";
+  context.fillText("Please confirm exact size before publishing.", 650, 672);
+  context.restore();
 }
 
 function drawDimensionOverlay(context, scene = "size") {
@@ -2779,7 +2874,7 @@ async function saveCanvasImage(canvas, scene) {
 }
 
 async function applySellerLogo(generated) {
-  if (!state.sellerLogoData || ["white", "wallMirrorWhite", "vaseWhite"].includes(generated.scene)) return generated;
+  if (!state.sellerLogoData || ["white", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite"].includes(generated.scene)) return generated;
   const sourceImage = generated.sourceImage || generated.image;
   const [productImage, logoImage] = await Promise.all([
     loadCanvasImage(sourceImage),

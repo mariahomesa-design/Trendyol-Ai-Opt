@@ -857,13 +857,13 @@ const PRODUCT_IMAGE_SCENES = {
   },
   vaseFeatures: {
     label: "Vase feature detail",
-    prompt: "Create image 3 for a decorative vase: a feature/detail base image focused on the vase texture and minimalist design. Show close-up ribbed texture, opening, base or side profile on a clean beige/cream background. Leave clean space for the app to add feature labels such as Ribbed Texture and Minimalist Design. Do not render words, letters, badges, arrows or logos yourself. Keep ceramic/material texture sharp and premium.",
-    geminiPrompt: "Create image 3 for a decorative vase: clean feature/detail base image, close-up ribbed texture and minimalist design on beige/cream background with empty space for labels. Do not render text, letters, badges, arrows or logos."
+    prompt: "Create image 3 for a decorative vase: a feature/detail base image like a premium Amazon product feature photo. Show two clean close-up views of the exact vase on a soft beige/cream background: one angled view focusing on the opening and ribbed side texture, and one bottom/base or side texture view. Leave clean space in the upper-left and lower-right for the app to add the words Ribbed Texture and Minimalist Design. Do not render words, letters, badges, arrows or logos yourself. Keep ceramic/material texture sharp, elegant and bright.",
+    geminiPrompt: "Create image 3 for a decorative vase: clean premium feature/detail base image with two close-up views of the exact vase, ribbed texture and minimalist design on beige/cream background. Leave space upper-left and lower-right for labels. Do not render text, letters, badges, arrows or logos."
   },
   vaseSize: {
     label: "Vase cm dimensions",
-    prompt: "Create image 4 for a decorative vase: a clean product size base image on white/light background. Show the exact vase fully visible, upright and centered, with enough blank space around it for the app to add measurement lines, cm values and a size tolerance note. Do not render text, numbers, inch marks, arrows, measurement lines, reference cans or logos yourself. Keep the vase texture and shape accurate.",
-    geminiPrompt: "Create image 4 for a decorative vase: clean white/light product-size base image, one upright centered vase, fully visible, accurate shape and ribbed texture, generous blank space for measurement overlay. Do not render text, numbers, inches, arrows, logos or measurement lines."
+    prompt: "Create image 4 for a decorative vase: a clean product size base image on a pure white/light background. Place the exact vase upright and fully visible slightly left of center, leaving large blank space at the top-left for a PRODUCT SIZE label and on the right for the app to add a size note. Do not render text, numbers, inch marks, arrows, measurement lines, reference cans or logos yourself. Keep the vase texture and shape accurate, bright and clear.",
+    geminiPrompt: "Create image 4 for a decorative vase: clean white/light product-size base image, one upright vase slightly left of center, fully visible, accurate shape and ribbed texture, large blank space top-left and right for app overlay. Do not render text, numbers, inches, arrows, logos or measurement lines."
   },
   vaseWhite: {
     label: "Vase white background",
