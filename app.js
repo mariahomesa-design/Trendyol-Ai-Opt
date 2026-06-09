@@ -2543,9 +2543,19 @@ function isDiningChairImageProfile() {
     || /كرسي\s*طعام|كراسي\s*طعام/.test(text);
 }
 
+function isWallMirrorImageProfile() {
+  const text = newProductImageProfileText();
+  return /\b(hanging|wall|round|bathroom|vanity|decorative)\s+mirrors?\b/.test(text)
+    || /\bmirrors?\s+(for|with|on)\s+(wall|bathroom|vanity|entryway|console)\b/.test(text)
+    || /مرآة\s*(جدارية|حائط)|مراية\s*(جدارية|حائط)/.test(text);
+}
+
 function getRequiredProductImageScenes() {
   if (isDiningChairImageProfile()) {
     return ["diningChairHero", "diningChairSet", "diningChairRoomAngle", "diningChairAlternateAngle", "white"];
+  }
+  if (isWallMirrorImageProfile()) {
+    return ["wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite"];
   }
   return ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
 }
@@ -2622,7 +2632,7 @@ async function createGeneratedImage(scene, customPrompt = "") {
 }
 
 async function applyListingImageOverlay(generated) {
-  if (!["features", "size"].includes(generated.scene)) return generated;
+  if (!["features", "size", "wallMirrorSize"].includes(generated.scene)) return generated;
   const productImage = await loadCanvasImage(generated.image);
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
@@ -2754,7 +2764,7 @@ async function saveCanvasImage(canvas, scene) {
 }
 
 async function applySellerLogo(generated) {
-  if (!state.sellerLogoData || generated.scene === "white") return generated;
+  if (!state.sellerLogoData || ["white", "wallMirrorWhite"].includes(generated.scene)) return generated;
   const sourceImage = generated.sourceImage || generated.image;
   const [productImage, logoImage] = await Promise.all([
     loadCanvasImage(sourceImage),
@@ -2793,7 +2803,7 @@ async function refreshGalleryBranding() {
   }
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
-  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo to images 1-6 and keeping the white-background image clean.</span>`;
+  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo to lifestyle/detail images and keeping the final white-background image clean.</span>`;
   try {
     state.generatedProductImages = await Promise.all(
       state.generatedProductImages.map((item) => applySellerLogo(item))

@@ -673,6 +673,17 @@ const FURNITURE_IMAGE_GUIDES = [
     }
   },
   {
+    name: "hanging wall mirror",
+    match: ["hanging mirror", "wall mirror", "round mirror", "bathroom mirror", "vanity mirror", "decorative mirror", "مرآة جدارية", "مراية جدارية", "مرآة حائط", "مراية حائط"],
+    scenes: {
+      wallMirrorHero: "Image 1: close HD lifestyle hero focused on the hanging wall mirror. Mirror is the main subject, mounted above a console or cabinet in a warm premium home setting, with clean wall, decor, natural sunlight, realistic reflection and very sharp frame detail.",
+      wallMirrorLifestyle: "Image 2: second lifestyle image with the same mirror size and shape consistency, placed above a vanity, cabinet or console in the same premium home style. Keep correct scale, warm natural daylight, clean beige/neutral interior and realistic reflection.",
+      wallMirrorDetail: "Image 3: close-up detail photograph of the mirror edge and frame. Crop into the round or shaped frame with clean wall background, sharp HD frame finish, mirror surface detail and realistic product-material focus.",
+      wallMirrorSize: "Image 4: clean dimensions image. Mirror centered on a white/light background with enough empty space for the app to add simple grey measurement lines and cm labels. Do not render any text, numbers, inches or arrows yourself.",
+      wallMirrorWhite: "Image 5: clear HD white-background catalog image. Show exactly one hanging wall mirror centered and fully visible, accurate frame color/shape/thickness, clean reflective surface, subtle contact shadow if needed, no props, no text and no logo."
+    }
+  },
+  {
     name: "sofa",
     match: ["sofa", "couch", "loveseat", "sectional", "كنبة", "اريكة"],
     scenes: {
@@ -804,6 +815,27 @@ const PRODUCT_IMAGE_SCENES = {
     label: "Dining chair alternate angle",
     prompt: "Create image 4 for a dining chair: a close alternate lifestyle photograph from another realistic camera angle. Place the exact chair beside the dining table, showing the chair back, seat cushion, legs and table edge with room context. Keep the same bright dining room photoshoot feeling, natural daylight, realistic lens perspective, crisp product texture, no humans, no text, no extra logos and no distorted duplicated chairs."
   },
+  wallMirrorHero: {
+    label: "Wall mirror hero",
+    prompt: "Create image 1 for a hanging wall mirror: a very clear HD close lifestyle hero photograph. The mirror must be the main focus, mounted on a clean warm wall above a wood console, cabinet or shelf with tasteful decor such as books, vase or bowl. Use premium home interior styling, soft natural sunlight, realistic wall shadows, accurate mirror reflection, crisp frame edge, no humans and no text. Keep the mirror size, shape, frame color and thickness exactly faithful to the uploaded reference."
+  },
+  wallMirrorLifestyle: {
+    label: "Wall mirror lifestyle",
+    prompt: "Create image 2 for a hanging wall mirror: a second premium lifestyle photo in the same high-end home style, such as above a bathroom vanity, rattan cabinet, console or sink. Keep the exact same mirror size, shape and frame proportion as image 1. Show realistic scale, clean beige/neutral walls, warm natural daylight, premium decor, sharp HD reflection and frame detail. No humans, no text, no extra logos and no distorted reflection."
+  },
+  wallMirrorDetail: {
+    label: "Mirror frame close-up",
+    prompt: "Create image 3 for a hanging wall mirror: a close-up product detail photograph of the mirror frame and edge. Crop into the frame curve or side profile so the frame finish, bevel, metal or wood texture and mirror surface are very clear. Use a clean light wall background, professional macro/product photography, sharp HD focus, no text, no props, no humans and no logo."
+  },
+  wallMirrorSize: {
+    label: "Mirror cm dimensions",
+    prompt: "Create image 4 for a hanging wall mirror: a clean catalog dimension base image on a white or very light grey background. Center exactly one mirror, fully visible, front-facing, with enough blank space around it for the app to add grey measurement lines and cm labels. Do not render any words, numbers, inch marks, arrows, measurement lines or logos yourself. Keep the mirror shape, frame thickness and color accurate and sharp.",
+    geminiPrompt: "Create image 4 for a hanging wall mirror: clean white/light grey catalog base image, one centered front-facing mirror, fully visible, accurate frame and reflection, with generous empty space for measurement overlay. Do not render text, numbers, inches, arrows, logos or measurement lines."
+  },
+  wallMirrorWhite: {
+    label: "Mirror white background",
+    prompt: "Create image 5 for a hanging wall mirror: a very clear HD marketplace catalog photograph on a pure white background. Show exactly one mirror centered and fully visible, front-facing or very slight three-quarter if needed to show frame thickness. Preserve the exact shape, frame color, thickness, mirror surface and proportions from the reference. No props, no text, no humans, no logo, clean soft shadow only."
+  },
   hero: {
     label: "Hero lifestyle image",
     prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
@@ -853,11 +885,12 @@ async function generateProductImage({ image, productType, title, scene, customPr
     `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
     guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
+    guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: create a realistic premium home photoshoot series. The mirror must stay the same size, shape, frame color and thickness across all images. Lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home, above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. Detail and catalog images must be extra sharp and never blurry." : "",
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
-    ["hero", "features", "detail", "benefits", "white"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    ["hero", "features", "detail", "benefits", "white", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
