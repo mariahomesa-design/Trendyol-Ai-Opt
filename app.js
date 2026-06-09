@@ -206,6 +206,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const SESSION_STORAGE_KEY = "trendlift-timed-session";
+const SESSION_CATALOG_LIMIT = 5000;
 
 const els = {
   connectionCard: $("#connectionCard"),
@@ -367,7 +368,7 @@ function saveSettings() {
 
 function readTimedSession() {
   try {
-    return JSON.parse(sessionStorage.getItem(SESSION_STORAGE_KEY) || "null");
+    return JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || "null");
   } catch {
     return null;
   }
@@ -375,17 +376,69 @@ function readTimedSession() {
 
 function writeTimedSession(update = {}) {
   const current = readTimedSession() || {};
-  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
-    ...current,
-    ...update,
-    lastActivity: Date.now()
-  }));
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      ...current,
+      ...update,
+      lastActivity: Date.now()
+    }));
+  } catch {
+    showToast("Browser storage is full. Session details may need to be entered again after refresh.");
+  }
+}
+
+function sessionListingSnapshot(listing) {
+  return {
+    id: listing.id,
+    barcode: listing.barcode,
+    sku: listing.sku,
+    title: listing.title,
+    brand: listing.brand,
+    category: listing.category,
+    price: listing.price,
+    stock: listing.stock,
+    status: listing.status,
+    score: listing.score,
+    image: listing.image,
+    images: listing.images || [],
+    description: listing.description,
+    keywords: listing.keywords || [],
+    metadata: listing.metadata || {},
+    draft: listing.draft || null,
+    issues: listing.issues || [],
+    imageWarning: listing.imageWarning || "",
+    imagesDirty: Boolean(listing.imagesDirty)
+  };
+}
+
+function persistSessionState(update = {}) {
+  const catalog = state.listings.slice(0, SESSION_CATALOG_LIMIT).map(sessionListingSnapshot);
+  writeTimedSession({
+    mode: state.mode,
+    selectedId: state.selectedId,
+    lastSyncMessage: state.lastSyncMessage,
+    listings: catalog,
+    importedRows: state.importedRows,
+    keywordDataset: state.keywordDataset,
+    ...update
+  });
 }
 
 function clearTimedSession(showMessage = false) {
-  sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(SESSION_STORAGE_KEY);
   state.connected = false;
   state.mode = "none";
+  state.selectedId = null;
+  state.listings = [];
+  state.importedRows = [];
+  state.keywordDataset = [];
+  state.lastSyncMessage = "";
+  $("#sellerId").value = "";
+  $("#apiKey").value = "";
+  $("#apiSecret").value = "";
+  $("#openAiApiKey").value = "";
+  $("#googleAiApiKey").value = "";
+  $("#ideogramApiKey").value = "";
   if (showMessage) {
     showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
     setOperation("Session expired");
@@ -427,6 +480,13 @@ async function restoreTimedSession() {
         method: "POST",
         body: JSON.stringify(saved.ai)
       });
+      $("#openAiApiKey").value = saved.ai.openAiApiKey || "";
+      $("#googleAiApiKey").value = saved.ai.googleApiKey || "";
+      $("#ideogramApiKey").value = saved.ai.ideogramApiKey || "";
+      if (saved.ai.openAiModel) $("#openAiModel").value = saved.ai.openAiModel;
+      if (saved.ai.openAiImageModel) $("#openAiImageModel").value = saved.ai.openAiImageModel;
+      if (saved.ai.geminiModel) $("#geminiModel").value = saved.ai.geminiModel;
+      if (saved.ai.geminiImageModel) $("#geminiImageModel").value = saved.ai.geminiImageModel;
     }
     if (saved.trendyol) {
       const result = await apiFetch("/api/connect", {
@@ -440,6 +500,18 @@ async function restoreTimedSession() {
       $("#apiSecret").value = saved.trendyol.apiSecret || "";
       $("#environment").value = saved.trendyol.environment || "prod";
       $("#storeFrontCode").value = result.storeFrontCode || saved.trendyol.storeFrontCode || "SA";
+    }
+    if (Array.isArray(saved.keywordDataset)) state.keywordDataset = saved.keywordDataset;
+    if (Array.isArray(saved.importedRows)) state.importedRows = saved.importedRows;
+    if (Array.isArray(saved.listings) && saved.listings.length) {
+      state.listings = saved.listings.map((listing) => enrichListing({ ...listing }));
+      state.selectedId = saved.selectedId && state.listings.some((listing) => listing.id === saved.selectedId)
+        ? saved.selectedId
+        : state.listings[0]?.id || null;
+      state.mode = saved.mode || state.mode;
+      state.connected = state.mode !== "none";
+      state.lastSyncMessage = saved.lastSyncMessage || "";
+      setOperation(`Restored ${state.listings.length} listings from the 30-minute session cache`);
     }
     writeTimedSession();
   } catch {
@@ -531,7 +603,7 @@ async function saveAiSettings(event) {
     state.settings.imageProvider = result.imageProvider;
     saveSettings();
     const currentSession = readTimedSession() || {};
-    writeTimedSession({
+    persistSessionState({
       ai: {
         ...currentSession.ai,
         ...aiPayload,
@@ -540,9 +612,9 @@ async function saveAiSettings(event) {
         ideogramApiKey: aiPayload.ideogramApiKey || currentSession.ai?.ideogramApiKey || ""
       }
     });
-    $("#openAiApiKey").value = "";
-    $("#googleAiApiKey").value = "";
-    $("#ideogramApiKey").value = "";
+    $("#openAiApiKey").value = aiPayload.openAiApiKey || currentSession.ai?.openAiApiKey || "";
+    $("#googleAiApiKey").value = aiPayload.googleApiKey || currentSession.ai?.googleApiKey || "";
+    $("#ideogramApiKey").value = aiPayload.ideogramApiKey || currentSession.ai?.ideogramApiKey || "";
     updateProviderState("#openAiConfiguredState", result.openAiConfigured);
     updateProviderState("#googleConfiguredState", result.googleAiConfigured);
     updateProviderState("#ideogramConfiguredState", result.ideogramConfigured);
@@ -580,6 +652,7 @@ function connectDemo() {
   state.listings = demoListings.map((listing) => enrichListing({ ...listing }));
   state.selectedId = state.listings[0]?.id || null;
   state.lastSyncMessage = "";
+  persistSessionState();
   showToast("Demo store loaded. You can test every section without using real credentials.");
   setOperation("Demo catalog loaded");
   setView("listings");
@@ -611,7 +684,7 @@ async function connectRealStore(event) {
     state.settings.storeFrontCode = result.storeFrontCode && result.storeFrontCode !== "none" ? result.storeFrontCode : payload.storeFrontCode;
     $("#storeFrontCode").value = state.settings.storeFrontCode || "";
     saveSettings();
-    writeTimedSession({
+    persistSessionState({
       trendyol: {
         ...payload,
         storeFrontCode: state.settings.storeFrontCode || payload.storeFrontCode
@@ -634,6 +707,7 @@ async function syncListings() {
   }
   if (state.mode === "demo") {
     state.listings = state.listings.map((listing) => enrichListing({ ...listing, score: Math.min(96, listing.score + 1) }));
+    persistSessionState();
     showToast("Demo listings synced and keyword signals refreshed.");
     setOperation("Demo sync completed");
     setView("listings");
@@ -667,6 +741,7 @@ async function syncListings() {
       showToast(`${countText} via ${result.endpoint || "product endpoint"}.`);
       setOperation(`Sync completed: ${countText}`);
     }
+    persistSessionState();
     setView("listings");
   } catch (error) {
     showToast(error.message || "Live sync failed. Check credentials and local proxy.");
@@ -708,6 +783,7 @@ function savePolicy(event) {
   }
   state.listings = state.listings.map(enrichListing);
   saveSettings();
+  persistSessionState();
   showToast(`Output settings saved. New recommendations will be written in ${state.settings.languageMode === "ar" ? "Arabic" : "English"}.`);
   setOperation(`Recommendation language set to ${state.settings.languageMode === "ar" ? "Arabic" : "English"}`);
   render();
@@ -719,6 +795,7 @@ function savePublishSettings(event) {
   state.settings.requireDraftReview = $("#requireDraftReview").checked;
   state.settings.proxyUrl = $("#proxyUrl").value.trim();
   saveSettings();
+  persistSessionState();
   showToast("Publishing settings saved.");
   setOperation("Publishing settings saved");
 }
@@ -1306,6 +1383,7 @@ async function analyzeListingImage(listing) {
     ...(listing.imageWarning ? [listing.imageWarning] : []),
     "Review the image-verified title and description, then publish when ready."
   ];
+  persistSessionState();
 }
 
 async function bulkDraft() {
@@ -1344,6 +1422,7 @@ async function bulkDraft() {
   button.innerHTML = `<span data-lucide="scan-search"></span> Analyze next 5`;
   showToast(`${completed} listings are ready for review.`);
   setOperation(`Analyzed ${completed} of ${queue.length} listing photos`);
+  persistSessionState();
   render();
 }
 
@@ -1370,6 +1449,7 @@ async function publishSelected() {
   if (state.mode !== "live") {
     listing.status = "optimized";
     listing.score = 93;
+    persistSessionState();
     showToast("Demo publish completed. In live mode this sends through the local proxy.");
     render();
     return;
@@ -1384,6 +1464,7 @@ async function publishSelected() {
     listing.title = payload.listing.title;
     listing.description = payload.listing.description;
     listing.batchRequestId = result.batchRequestId || null;
+    persistSessionState();
     showToast(result.message || "Publish request completed.");
     setOperation(result.batchRequestId ? `Publish submitted. Batch ${result.batchRequestId}` : "Publish request completed");
     render();
@@ -1723,6 +1804,7 @@ function changeSelectedListingImageOrder(action, index) {
   listing.images = images;
   listing.image = images[0] || "";
   listing.imagesDirty = true;
+  persistSessionState();
   render();
 }
 
@@ -1754,6 +1836,7 @@ async function generateImageForSelectedListing() {
     listing.images = [...(listing.images?.length ? listing.images : listing.image ? [listing.image] : []), imageUrl];
     listing.image = listing.images[0] || listing.image;
     listing.imagesDirty = true;
+    persistSessionState();
     showToast("New lifestyle image added to this listing.");
     render();
   } catch (error) {
@@ -1797,6 +1880,7 @@ async function saveSelectedListingImages() {
         submittedAt: new Date().toISOString()
       });
     }
+    persistSessionState();
     showToast(result.message || "Image update submitted to Trendyol.");
     setOperation(result.batchRequestId ? `Image update submitted. Batch ${result.batchRequestId}` : "Image update submitted");
     render();
@@ -1996,6 +2080,7 @@ function importReviewedFile(event) {
       const rows = parseReviewRows(reader.result, file.name);
       state.importedRows = rows;
       applyImportedRows(rows);
+      persistSessionState({ importedRows: state.importedRows });
       showToast(`Imported ${rows.length} reviewed rows. Click Publish imported to send rows marked YES.`);
       setOperation(`Imported ${rows.length} reviewed rows`);
       render();
@@ -2054,6 +2139,7 @@ function importKeywordDataset(event) {
       if (!validRows.length) throw new Error("No valid rows");
       state.keywordDataset = validRows;
       state.listings = state.listings.map(enrichListing);
+      persistSessionState();
       showToast(`Imported ${validRows.length} verified monthly keyword rows.`);
       setOperation(`Imported monthly keyword dataset with ${validRows.length} rows`);
       render();
@@ -2145,6 +2231,7 @@ async function publishImportedRows() {
     }
   }
   const message = `Submitted ${published} imported rows to Trendyol${failed ? `, ${failed} failed or skipped` : ""}.`;
+  persistSessionState({ importedRows: state.importedRows });
   showToast(message);
   setOperation(message);
 }
