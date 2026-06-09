@@ -1957,8 +1957,16 @@ async function generateImageForSelectedListing() {
         image: listing.image,
         productType: listing.draft?.metadata?.detectedProductType || listing.category || "product",
         title: listing.draft?.title || listing.title,
-        scene: "lifestyle",
-        customPrompt: `${customPrompt} Keep exactly one product only. Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} area for the seller logo.`
+        scene: "optimizationRequested",
+        customPrompt: [
+          customPrompt,
+          "Create this as a professional Saudi marketplace product photo with the same quality expected in the Create Listing image workflow.",
+          "Remove any logo, watermark, old seller mark, text overlay, badge or corner branding that already exists in the source image or generated background.",
+          "Keep exactly one product only unless the request explicitly asks for a set.",
+          state.sellerLogoData
+            ? `Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} corner for the app to place the uploaded seller logo after generation. Do not draw or invent any logo yourself.`
+            : "Do not add any logo."
+        ].join(" ")
       })
     });
     const result = await applySellerLogo(generated);

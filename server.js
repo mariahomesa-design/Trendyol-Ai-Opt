@@ -875,6 +875,10 @@ const PRODUCT_IMAGE_SCENES = {
     label: "Vase white background",
     prompt: "Create image 5 for a decorative vase: a very clear HD marketplace catalog photograph on a pure white background. Show exactly one vase only, no flowers, no props, centered and filling the frame tastefully, with accurate ribbed texture, opening, base, material color and proportions. No text, no humans, no logo, clean soft contact shadow only."
   },
+  optimizationRequested: {
+    label: "Optimized listing image",
+    prompt: "Create a premium marketplace image for an existing listing using the seller's requested direction. Match the quality level of a professional furniture or home-decor brand photoshoot: realistic scale, crisp product detail, accurate material texture, natural lighting, clean composition, correct room context, and 1200 x 1800 portrait framing. Remove any existing logo, watermark, badge, text overlay, sticker, old brand mark or corner branding from the reference image and background. Leave one clean corner for the app to place the seller's uploaded logo afterward unless the seller asks for a pure white background. Do not invent a logo. Do not make a low-quality cutout, collage, render, duplicate product or blurry resized image."
+  },
   hero: {
     label: "Hero lifestyle image",
     prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
@@ -928,9 +932,10 @@ async function generateProductImage({ image, productType, title, scene, customPr
     guide.name === "decorative vase" ? "Decorative vase approved style reference: create a clear premium ecommerce photoshoot series. Lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. Feature images should show ribbed texture and minimalist design. Size and white-background images must be clean, bright and uncluttered." : "",
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
+    "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
-    ["hero", "features", "detail", "benefits", "white", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    ["hero", "features", "detail", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
