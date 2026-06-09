@@ -1991,9 +1991,15 @@ async function saveSelectedListingImages() {
       method: "POST",
       body: JSON.stringify({
         source: listing.source || listing.metadata || {},
+        contentId: listing.metadata?.contentId || listing.source?.contentId || null,
         barcode: listing.barcode,
         title: listing.title,
         description: listing.description,
+        productMainId: listing.metadata?.productMainId || listing.source?.productMainId || listing.metadata?.modelCode || "",
+        brandId: listing.metadata?.brandId || listing.source?.brandId || listing.source?.brand?.id || "",
+        categoryId: listing.metadata?.categoryId || listing.source?.categoryId || listing.source?.pimCategoryId || listing.source?.category?.id || "",
+        modelCode: listing.metadata?.modelCode || listing.source?.modelCode || "",
+        vatRate: listing.metadata?.vatRate || listing.source?.vatRate || "",
         stockCode: listing.sku,
         images
       })

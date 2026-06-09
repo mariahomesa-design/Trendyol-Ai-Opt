@@ -227,6 +227,12 @@ async function trendyolFetch(endpoint, options = {}) {
   return body;
 }
 
+function compactTrendyolError(error) {
+  const body = error?.body || {};
+  const detail = body.message || body.error || body.raw || "";
+  return `${error?.statusCode || "error"}${detail ? ` ${detail}` : ""}`.trim();
+}
+
 async function optimizeWithImage(listing) {
   if (!providerKey(AI_ANALYSIS_PROVIDER)) {
     const error = new Error(`${providerLabel(AI_ANALYSIS_PROVIDER)} image analysis is not configured. Add its API key in Settings.`);
@@ -1721,15 +1727,15 @@ async function handleApi(req, res, url) {
         title: String(source.title || body.title || "").trim().slice(0, 100),
         description: String(source.description || body.description || "").trim(),
         productMainId: String(source.productMainId || source.modelCode || body.modelCode || body.productMainId || "").trim(),
-        brandId: Number(source.brandId || source.brand?.id),
-        categoryId: Number(source.categoryId || source.pimCategoryId || source.category?.id),
+        brandId: Number(source.brandId || source.brand?.id || body.brandId),
+        categoryId: Number(source.categoryId || source.pimCategoryId || source.category?.id || body.categoryId),
         quantity: Number(sourceStock.quantity ?? variant.quantity ?? source.quantity ?? body.quantity ?? 0),
         stockCode: String(variant.stockCode || source.stockCode || source.stockId || body.stockCode || "").trim(),
         origin: String(source.origin || "SA").slice(0, 2),
         dimensionalWeight: Number(variant.dimensionalWeight || source.dimensionalWeight || 1),
         listPrice: Number(sourcePrice.listPrice || source.listPrice || body.listPrice),
         salePrice: Number(sourcePrice.salePrice || source.salePrice || source.discountedPrice || body.salePrice),
-        vatRate: Number(variant.vatRate || source.vatRate || 15),
+        vatRate: Number(variant.vatRate || source.vatRate || body.vatRate || 15),
         images: images.map((image) => ({ url: image })),
         attributes: Array.isArray(source.attributes)
           ? source.attributes.map((attribute) => ({
@@ -1753,15 +1759,44 @@ async function handleApi(req, res, url) {
         sendJson(res, 400, { ok: false, message: `Trendyol did not return enough data to update images. Missing: ${missing.join(", ")}.` });
         return;
       }
-      const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
-        method: "PUT",
-        storeFrontCode: session.storeFrontCode,
-        acceptLanguage: "en",
-        body: JSON.stringify({ items: [item] })
-      });
+      const attempts = [];
+      let result;
+      try {
+        result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
+          method: "PUT",
+          storeFrontCode: session.storeFrontCode,
+          acceptLanguage: "en",
+          body: JSON.stringify({ items: [item] })
+        });
+      } catch (error) {
+        attempts.push(`PUT /v2/products: ${compactTrendyolError(error)}`);
+        const contentId = Number(source.contentId || body.contentId);
+        if (!contentId || error.statusCode !== 404) throw error;
+        try {
+          result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/products/content-bulk-update`, {
+            method: "POST",
+            storeFrontCode: session.storeFrontCode,
+            acceptLanguage: session.storeFrontCode ? "en" : undefined,
+            body: JSON.stringify({
+              items: [{
+                contentId,
+                images: images.map((image) => ({ url: image }))
+              }]
+            })
+          });
+        } catch (fallbackError) {
+          attempts.push(`POST /content-bulk-update images: ${compactTrendyolError(fallbackError)}`);
+          const errorMessage = `Trendyol could not update these images. Tried ${attempts.join(" | ")}. This product may not support image-only updates from API; sync the product again or update images in Seller Center.`;
+          const updateError = new Error(errorMessage);
+          updateError.statusCode = fallbackError.statusCode || error.statusCode || 400;
+          updateError.body = { attempts, primary: error.body, fallback: fallbackError.body };
+          throw updateError;
+        }
+      }
       sendJson(res, 200, {
         ok: true,
         batchRequestId: result.batchRequestId || null,
+        attempts,
         message: result.batchRequestId
           ? `Image update submitted. Batch request ID: ${result.batchRequestId}`
           : "Image update submitted to Trendyol."
