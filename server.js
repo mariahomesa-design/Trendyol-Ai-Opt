@@ -643,32 +643,152 @@ async function imageInputToBlob(image) {
   return new Blob([bytes], { type: contentType });
 }
 
+const FURNITURE_IMAGE_GUIDES = [
+  {
+    name: "sofa",
+    match: ["sofa", "couch", "loveseat", "sectional", "كنبة", "اريكة"],
+    scenes: {
+      hero: "Lifestyle hero in a premium Saudi living room, full sofa visible, no humans.",
+      lifestyle: "Living room lifestyle from another angle with realistic decor and scale.",
+      features: "Feature image for upholstery, frame, legs, cushions and practical benefits.",
+      size: "Dimensions image with multiple sofa angles and simple average cm values only.",
+      detail: "Fabric close-up image showing weave, texture, stitching and material quality.",
+      benefits: "Seating capacity and comfort image showing cushions, depth and everyday relaxation."
+    }
+  },
+  {
+    name: "chair",
+    match: ["chair", "armchair", "dining chair", "office chair", "lounge chair", "bar stool", "stool", "كرسي"],
+    scenes: {
+      hero: "Lifestyle hero in the correct room: office chair in office, lounge chair in lounge, dining chair in dining room, bar stool at counter.",
+      lifestyle: "Lifestyle image from another direction; for dining chairs or bar stools show a saleable set only when appropriate.",
+      features: "Feature image for back support, legs, upholstery, frame and finish.",
+      size: "Dimensions image with multiple chair angles and simple average cm values only.",
+      detail: "Material detail image showing fabric, leather, wood, metal or stitching close-up.",
+      benefits: "Comfort and usage image showing ergonomic shape, seat comfort and intended room use without humans."
+    }
+  },
+  {
+    name: "dining table",
+    match: ["dining table", "dining set", "kitchen table", "طاولة طعام", "سفرة"],
+    scenes: {
+      hero: "Dining room lifestyle hero with the table fully visible and styled for Saudi home dining.",
+      lifestyle: "Dining room lifestyle from another direction with realistic chairs only if they support the table presentation.",
+      features: "Feature image for tabletop, base, finish, stability and easy cleaning.",
+      size: "Dimensions image with multiple table angles and simple average cm values only.",
+      detail: "Marble or wood close-up image showing surface texture, edge profile and finish.",
+      benefits: "Seating capacity image showing practical family dining capacity without crowded styling."
+    }
+  },
+  {
+    name: "coffee table",
+    match: ["coffee table", "center table", "side table", "طاولة قهوة", "طاولة وسط"],
+    scenes: {
+      hero: "Lifestyle hero in a living room seating area with the coffee table fully visible.",
+      lifestyle: "Lifestyle image from another angle with sofa, rug and decor used only as context.",
+      features: "Feature image for surface, legs, storage shelf, finish and easy styling.",
+      size: "Dimensions image with multiple table angles and simple average cm values only.",
+      detail: "Material detail close-up showing wood, marble, glass, metal or surface finish.",
+      benefits: "Styling inspiration image showing tasteful decor placement and daily living use."
+    }
+  },
+  {
+    name: "bed",
+    match: ["bed", "bed frame", "headboard", "سرير", "لوح سرير"],
+    scenes: {
+      hero: "Bedroom lifestyle hero with the bed fully visible in a premium calm bedroom.",
+      lifestyle: "Bedroom lifestyle from another direction with bedding and nightstands as realistic context.",
+      features: "Feature image for frame, support, upholstery, legs and finish.",
+      size: "Dimensions image with multiple bed angles and simple average cm values only.",
+      detail: "Headboard detail close-up showing upholstery, stitching, wood or panel texture.",
+      benefits: "Storage or comfort benefits image showing under-bed storage, support or comfort details when relevant."
+    }
+  },
+  {
+    name: "shoe cabinet / storage",
+    match: ["shoe cabinet", "shoe rack", "storage cabinet", "cabinet", "wardrobe", "dresser", "خزانة", "جزامة", "تخزين"],
+    scenes: {
+      hero: "Entryway lifestyle hero with the storage or shoe cabinet fully visible and correctly placed.",
+      lifestyle: "Entryway lifestyle from another direction with realistic shoes or decor only as supporting context.",
+      features: "Feature image for doors, shelves, handles, ventilation, legs and finish.",
+      size: "Dimensions image with multiple cabinet angles and simple average cm values only.",
+      detail: "Material detail close-up showing wood grain, rattan, carving, handle or surface finish.",
+      benefits: "Storage capacity image showing organized shelves or compartments without clutter."
+    }
+  },
+  {
+    name: "mirror",
+    match: ["mirror", "standing mirror", "wall mirror", "مرآة", "مراية"],
+    scenes: {
+      hero: "Lifestyle hero with the mirror correctly placed in bedroom, entryway or living area.",
+      lifestyle: "Lifestyle image from another angle showing how the mirror improves the room.",
+      features: "Feature image for frame, shape, mounting, finish and reflective surface.",
+      size: "Dimensions image with multiple mirror angles and simple average cm values only.",
+      detail: "Frame detail close-up showing texture, material, edge and finish.",
+      benefits: "Room enhancement image showing brightness, depth and decorative impact."
+    }
+  },
+  {
+    name: "wall art",
+    match: ["wall art", "canvas", "painting", "frame art", "decorative panel", "لوحة", "فن جداري"],
+    scenes: {
+      hero: "Lifestyle wall hero with the artwork correctly placed on a living room, dining or hallway wall.",
+      lifestyle: "Lifestyle wall image from another room angle with realistic decor and scale.",
+      features: "Feature image for print quality, frame, hanging style, texture and finish.",
+      size: "Dimensions image with multiple art angles and simple average cm values only.",
+      detail: "Texture detail close-up showing canvas, print, relief, frame or surface detail.",
+      benefits: "Decor inspiration image showing room styling and wall enhancement."
+    }
+  }
+];
+
+function imageGuideFor(productType, title) {
+  const haystack = `${productType || ""} ${title || ""}`.toLowerCase();
+  const guide = FURNITURE_IMAGE_GUIDES.find((item) => item.match.some((word) => haystack.includes(word)));
+  if (guide) return guide;
+  return {
+    name: productType || "furniture product",
+    scenes: {
+      hero: "Lifestyle hero in the most suitable room for this product category, full product visible, no humans.",
+      lifestyle: "Second lifestyle image from another direction in a correct real-use environment.",
+      features: "Feature image highlighting visible construction, material, finish and practical benefits.",
+      size: "Dimensions image with multiple product angles and simple average cm values only.",
+      detail: "Material or texture close-up showing the most important product detail.",
+      benefits: "Usage, capacity, comfort, styling or storage benefit image depending on what the product is."
+    }
+  };
+}
+
 const PRODUCT_IMAGE_SCENES = {
   hero: {
     label: "Hero lifestyle image",
-    prompt: "Create image 1: the main premium marketplace hero photograph. Place the exact reference product naturally in the correct upscale Saudi interior for this product type: office chairs in a modern office, lounge chairs in a lounge/living room, dining chairs in a dining room, bar stools at a kitchen island or bar counter, TV tables and console tables as one item in a living room or entryway, cabinets and shoe cabinets in the correct hallway or storage space. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
-  },
-  alternate: {
-    label: "Second lifestyle angle",
-    prompt: "Create image 2: a second premium lifestyle photograph of the same exact reference product from another direction in the same type of correct room. No people and no text. If the product is a dining chair, bar stool or simple set-friendly seating item, show a realistic saleable set such as 2, 4, 6 or 8 pieces only when it makes commercial sense. If the product is a TV table, console table, cabinet, shoe cabinet, coffee table, side table, lamp or single furniture piece, show exactly one product only. Keep the product fully visible, sharp, realistic and luxury-brand quality, with clean corner space for the seller logo."
+    prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
   },
   lifestyle: {
-    label: "Third lifestyle image",
-    prompt: "Create image 3: another premium lifestyle photograph without humans. Place the exact reference product in a different realistic composition that still fits the product type and Saudi marketplace taste. Show exactly one product unless the seller specifically requested a set. Never add mirrored copies, background duplicates or unrelated matching items. Use luxury furniture-brand commercial photography, accurate lens perspective, crisp product detail, realistic lighting, natural shadows, no text and clean corner space for the seller logo."
+    label: "Lifestyle image",
+    prompt: "Create image 2: another premium lifestyle photograph without humans. Place the exact reference product in a different realistic composition that fits the product category and Saudi marketplace taste. For dining chairs or bar stools, show a realistic saleable set only when appropriate. For tables, cabinets, beds, mirrors, wall art and single furniture pieces, show one product only. Never add mirrored copies, background duplicates or unrelated matching items. Use luxury furniture-brand commercial photography, accurate lens perspective, crisp product detail, realistic lighting, natural shadows, no text and clean corner space for the seller logo."
   },
   features: {
     label: "Bilingual features image",
-    prompt: "Create image 4: a premium lifestyle feature image without humans. Keep the exact reference product large, sharp and unchanged in a clean bright interior or studio-lifestyle background. Leave generous uncluttered space around the product for the app to add bilingual English and Arabic feature labels. Do not render words, letters, arrows, badges, measurements or extra logos yourself. Keep clean corner space for the seller logo.",
-    geminiPrompt: "Create image 4: a clean premium lifestyle product feature background. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio-lifestyle background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
+    prompt: "Create image 3: a premium lifestyle feature image without humans. Keep the exact reference product large, sharp and unchanged in a clean bright interior or studio-lifestyle background. Leave generous uncluttered space around the product for the app to add bilingual English and Arabic feature labels. Do not render words, letters, arrows, badges, measurements or extra logos yourself. Keep clean corner space for the seller logo.",
+    geminiPrompt: "Create image 3: a clean premium lifestyle product feature background. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio-lifestyle background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
   },
   size: {
-    label: "Size and angle image",
-    prompt: "Create image 5: a high-end white-background catalog size image with multiple consistent views of the exact same reference product, such as front, side, three-quarter and rear or top as appropriate. Keep every view identical in color, material, pattern and construction, with balanced spacing and no overlap. Do not render words, arrows, measurements or logos; the app will add simple average size values afterward.",
-    geminiPrompt: "Create image 5: a high-end white-background catalog contact sheet with multiple consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use a pure white background, equal lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
+    label: "Dimensions image",
+    prompt: "Create image 4: a high-end catalog dimensions image with multiple consistent views of the exact same reference product, such as front, side, three-quarter and rear or top as appropriate. Keep every view identical in color, material, pattern and construction, with balanced spacing and no overlap. Do not render words, arrows, measurements or logos; the app will add simple average cm values afterward.",
+    geminiPrompt: "Create image 4: a high-end catalog dimensions image with multiple consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use bright clean lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
+  },
+  detail: {
+    label: "Material detail image",
+    prompt: "Create image 5: a premium close-up detail photograph of the exact reference product. Focus on the category's most important material or construction detail such as fabric weave, wood grain, marble surface, frame edge, headboard, handle, texture, stitching or finish. The detail must look realistic, sharp and luxury brand quality. No humans, no text, no extra logos, and clean corner space for the seller logo."
+  },
+  benefits: {
+    label: "Usage benefits image",
+    prompt: "Create image 6: a premium benefit image for the exact reference product. Show the category's main commercial benefit, such as seating capacity, comfort, storage capacity, room enhancement, styling inspiration or daily usage. Keep the product realistic, fully understandable, elegant and no humans. No text, no extra logos, and clean corner space for the seller logo."
   },
   white: {
     label: "Pure white background image",
-    prompt: "Create image 6: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and no logo."
+    prompt: "Create image 7: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and no logo."
   }
 };
 
@@ -684,13 +804,15 @@ async function generateProductImage({ image, productType, title, scene, customPr
     error.statusCode = 400;
     throw error;
   }
+  const guide = imageGuideFor(productType, title);
   const prompt = [
     `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
+    `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
-    "Do not duplicate the product unless the requested set-friendly alternate image or size contact sheet explicitly requires multiple consistent views.",
-    ["hero", "lifestyle", "features", "white"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
+    ["hero", "features", "detail", "benefits", "white"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",

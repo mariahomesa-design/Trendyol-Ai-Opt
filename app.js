@@ -2330,15 +2330,15 @@ async function generateNewProductImages() {
     $("#imageCreativeDirection").focus();
     return;
   }
-  const scenes = ["hero", "alternate", "lifestyle", "features", "size", "white"];
+  const scenes = ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
   refreshIcons();
   let completed = state.generatedProductImages.length;
   for (const scene of scenes) {
     if (state.generatedProductImages.some((item) => item.scene === scene)) continue;
-    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of 6`;
-    status.innerHTML = `<strong>${completed} of 6 images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
+    button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of 7`;
+    status.innerHTML = `<strong>${completed} of 7 images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
     refreshIcons();
     try {
       const result = await createGeneratedImage(scene, sellerDirection);
@@ -2346,18 +2346,18 @@ async function generateNewProductImages() {
       completed += 1;
       renderGeneratedProductImages();
       const fallbackNote = result.usedFallback ? " Pro was busy, so Gemini Flash completed this image." : "";
-      status.innerHTML = `<strong>${completed} of 6 images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
-      showToast(`${completed} of 6 created: ${result.label}${fallbackNote}`);
+      status.innerHTML = `<strong>${completed} of 7 images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
+      showToast(`${completed} of 7 created: ${result.label}${fallbackNote}`);
       renderListingReadiness();
     } catch (error) {
-      status.innerHTML = `<strong>${completed} of 6 images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
+      status.innerHTML = `<strong>${completed} of 7 images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
       showToast(error.message || `Image ${completed + 1} failed.`);
       break;
     }
   }
   button.disabled = false;
-  button.innerHTML = `<span data-lucide="images"></span> ${completed === 6 ? "Regenerate missing images" : "Continue image generation"}`;
-  setOperation(`${completed} of 6 listing images created`);
+  button.innerHTML = `<span data-lucide="images"></span> ${completed === 7 ? "Regenerate missing images" : "Continue image generation"}`;
+  setOperation(`${completed} of 7 listing images created`);
   refreshIcons();
 }
 
@@ -2553,7 +2553,7 @@ async function refreshGalleryBranding() {
   }
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
-  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo to images 1-5 and keeping the white-background image clean.</span>`;
+  status.innerHTML = `<strong>Updating logo placement</strong><span>Applying the saved logo to images 1-6 and keeping the white-background image clean.</span>`;
   try {
     state.generatedProductImages = await Promise.all(
       state.generatedProductImages.map((item) => applySellerLogo(item))
@@ -2639,7 +2639,7 @@ function deleteGeneratedImage(scene) {
   state.generatedProductImages = state.generatedProductImages.filter((item) => item.scene !== scene);
   renderGeneratedProductImages();
   $("#imageGenerationStatus").classList.remove("hidden");
-  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of 6 images created</strong><span>The deleted image can be generated again.</span>`;
+  $("#imageGenerationStatus").innerHTML = `<strong>${state.generatedProductImages.length} of 7 images created</strong><span>The deleted image can be generated again.</span>`;
   showToast("Generated image removed from this listing.");
   renderListingReadiness();
 }
