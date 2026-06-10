@@ -2465,18 +2465,64 @@ async function prepareTransparentLogo(file) {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  const cornerSamples = getLogoCornerSamples(pixels.data, canvas.width, canvas.height);
+  const backgroundColor = cornerSamples.reduce(
+    (total, color) => ({
+      red: total.red + color.red / cornerSamples.length,
+      green: total.green + color.green / cornerSamples.length,
+      blue: total.blue + color.blue / cornerSamples.length
+    }),
+    { red: 0, green: 0, blue: 0 }
+  );
   for (let index = 0; index < pixels.data.length; index += 4) {
     const red = pixels.data[index];
     const green = pixels.data[index + 1];
     const blue = pixels.data[index + 2];
     const minimum = Math.min(red, green, blue);
     const maximum = Math.max(red, green, blue);
-    if (minimum >= 242 && maximum - minimum <= 18) {
-      pixels.data[index + 3] = Math.max(0, Math.round((255 - minimum) * 18));
+    const saturation = maximum ? (maximum - minimum) / maximum : 0;
+    const backgroundDistance = Math.hypot(
+      red - backgroundColor.red,
+      green - backgroundColor.green,
+      blue - backgroundColor.blue
+    );
+    const isCleanWhite = minimum >= 236 && saturation <= 0.1;
+    const isWhiteFringe = minimum >= 218 && saturation <= 0.08;
+    const isSampledBackground = backgroundDistance <= 46 && saturation <= 0.14 && maximum >= 205;
+    if (isCleanWhite || isWhiteFringe || isSampledBackground) {
+      pixels.data[index + 3] = 0;
+    } else if (maximum >= 210 && saturation <= 0.18) {
+      pixels.data[index + 3] = Math.max(0, Math.min(pixels.data[index + 3], Math.round((255 - maximum) * 5)));
     }
   }
   context.putImageData(pixels, 0, 0);
   return canvas.toDataURL("image/png");
+}
+
+function getLogoCornerSamples(data, width, height) {
+  const sampleSize = Math.max(4, Math.min(24, Math.floor(Math.min(width, height) * 0.08)));
+  const corners = [
+    [0, 0],
+    [width - sampleSize, 0],
+    [0, height - sampleSize],
+    [width - sampleSize, height - sampleSize]
+  ];
+  return corners.map(([startX, startY]) => {
+    let count = 0;
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    for (let y = startY; y < startY + sampleSize; y += 1) {
+      for (let x = startX; x < startX + sampleSize; x += 1) {
+        const index = (y * width + x) * 4;
+        red += data[index];
+        green += data[index + 1];
+        blue += data[index + 2];
+        count += 1;
+      }
+    }
+    return { red: red / count, green: green / count, blue: blue / count };
+  });
 }
 
 function fileToDataUrl(file) {
