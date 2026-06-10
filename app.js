@@ -186,6 +186,7 @@ const state = {
   batchPollTimer: null,
   sellerLogoData: "",
   sellerLogoPosition: "top-left",
+  optimizationHistory: {},
   lastSyncMessage: "",
   lastOperation: "Ready",
   imageAiAvailable: false,
@@ -210,6 +211,7 @@ const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const SESSION_STORAGE_KEY = "trendlift-timed-session";
 const CATEGORY_DIRECTORY_STORAGE_KEY = "trendlift-category-directory";
+const OPTIMIZATION_HISTORY_STORAGE_KEY = "trendlift-listing-optimization-history";
 const SESSION_CATALOG_LIMIT = 5000;
 
 const els = {
@@ -243,6 +245,7 @@ const els = {
 
 async function init() {
   loadSavedSettings();
+  loadOptimizationHistory();
   bindEvents();
   hydrateSettingsForms();
   bindSessionActivity();
@@ -394,6 +397,91 @@ function writeTimedSession(update = {}) {
   }
 }
 
+function loadOptimizationHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(OPTIMIZATION_HISTORY_STORAGE_KEY) || "{}");
+    state.optimizationHistory = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+  } catch {
+    state.optimizationHistory = {};
+  }
+}
+
+function saveOptimizationHistory() {
+  try {
+    localStorage.setItem(OPTIMIZATION_HISTORY_STORAGE_KEY, JSON.stringify(state.optimizationHistory));
+  } catch {
+    showToast("Browser storage is full. Listing optimization history may not be saved.");
+  }
+}
+
+function listingHistoryKeys(listing) {
+  const values = [
+    ["id", listing.id],
+    ["barcode", listing.barcode],
+    ["sku", listing.sku],
+    ["content", listing.metadata?.contentId || listing.source?.contentId],
+    ["variant", listing.metadata?.variantId || listing.source?.variantId],
+    ["main", listing.metadata?.productMainId || listing.source?.productMainId],
+    ["model", listing.metadata?.modelCode || listing.source?.modelCode]
+  ];
+  return [...new Set(values
+    .map(([prefix, value]) => [prefix, String(value || "").trim()])
+    .filter(([, value]) => value && value !== "undefined" && value !== "null")
+    .map(([prefix, value]) => `${prefix}:${value.toLowerCase()}`))];
+}
+
+function listingHistoryRecord(listing) {
+  const keys = listingHistoryKeys(listing);
+  return keys.map((key) => state.optimizationHistory[key]).find(Boolean) || null;
+}
+
+function rememberListingHistory(listing, updates = {}) {
+  const keys = listingHistoryKeys(listing);
+  if (!keys.length) return;
+  const existing = listingHistoryRecord(listing) || {};
+  const record = {
+    ...existing,
+    ...updates,
+    status: updates.status || listing.status || existing.status || "needs",
+    draft: updates.draft !== undefined ? updates.draft : listing.draft || existing.draft || null,
+    keywords: updates.keywords || listing.keywords || existing.keywords || [],
+    imageWarning: updates.imageWarning !== undefined ? updates.imageWarning : listing.imageWarning || existing.imageWarning || "",
+    score: updates.score || listing.score || existing.score || 0,
+    title: listing.title || existing.title || "",
+    description: listing.description || existing.description || "",
+    barcode: listing.barcode || existing.barcode || "",
+    sku: listing.sku || existing.sku || "",
+    savedAt: new Date().toISOString(),
+    keys
+  };
+  keys.forEach((key) => {
+    state.optimizationHistory[key] = record;
+  });
+  saveOptimizationHistory();
+}
+
+function applyListingHistory(listing) {
+  const record = listingHistoryRecord(listing);
+  if (!record) return listing;
+  const statusPriority = { needs: 0, review: 0, draft: 1, optimized: 2 };
+  const currentPriority = statusPriority[listing.status] || 0;
+  const savedPriority = statusPriority[record.status] || 0;
+  const next = {
+    ...listing,
+    draft: record.draft || listing.draft || null,
+    keywords: record.keywords?.length ? record.keywords : listing.keywords,
+    imageWarning: record.imageWarning || listing.imageWarning || "",
+    batchRequestId: record.batchRequestId || listing.batchRequestId || null,
+    score: Math.max(Number(listing.score || 0), Number(record.score || 0))
+  };
+  if (savedPriority > currentPriority) {
+    next.status = record.status;
+  }
+  if (record.optimizedAt) next.optimizedAt = record.optimizedAt;
+  if (record.publishedAt) next.publishedAt = record.publishedAt;
+  return next;
+}
+
 function sessionListingSnapshot(listing) {
   return {
     id: listing.id,
@@ -414,7 +502,10 @@ function sessionListingSnapshot(listing) {
     draft: listing.draft || null,
     issues: listing.issues || [],
     imageWarning: listing.imageWarning || "",
-    imagesDirty: Boolean(listing.imagesDirty)
+    imagesDirty: Boolean(listing.imagesDirty),
+    batchRequestId: listing.batchRequestId || "",
+    optimizedAt: listing.optimizedAt || listing.draft?.metadata?.optimizedAt || "",
+    publishedAt: listing.publishedAt || ""
   };
 }
 
@@ -515,7 +606,7 @@ async function restoreTimedSession() {
     if (Array.isArray(saved.keywordDataset)) state.keywordDataset = saved.keywordDataset;
     if (Array.isArray(saved.importedRows)) state.importedRows = saved.importedRows;
     if (Array.isArray(saved.listings) && saved.listings.length) {
-      state.listings = saved.listings.map((listing) => enrichListing({ ...listing }));
+      state.listings = saved.listings.map((listing) => enrichListing(applyListingHistory({ ...listing })));
       state.selectedId = saved.selectedId && state.listings.some((listing) => listing.id === saved.selectedId)
         ? saved.selectedId
         : state.listings[0]?.id || null;
@@ -734,8 +825,12 @@ async function syncListings() {
     refreshIcons();
     const result = await apiFetch("/api/products?state=all&size=100");
     const products = Array.isArray(result.items) ? result.items : [];
-    state.listings = products.map(normalizeTrendyolProduct).map(enrichListing);
-    state.selectedId = state.listings[0]?.id || null;
+    const previousSelectedKeys = selectedListing() ? listingHistoryKeys(selectedListing()) : [];
+    state.listings = products.map(normalizeTrendyolProduct).map(applyListingHistory).map(enrichListing);
+    state.selectedId = state.listings.find((listing) => listing.id === state.selectedId)?.id
+      || state.listings.find((listing) => listingHistoryKeys(listing).some((key) => previousSelectedKeys.includes(key)))?.id
+      || state.listings[0]?.id
+      || null;
     if (!state.listings.length) {
       state.lastSyncMessage =
         "Connected, but Trendyol returned 0 products from approved and unapproved product APIs. Try selecting the exact Storefront Code in Settings, then Test connection again. Also check that the Seller ID is the Supplier ID for these API credentials and Product Integration permission is enabled.";
@@ -896,7 +991,7 @@ function enrichListing(listing) {
   listing.price = displayValue(listing.price);
   listing.barcode = displayValue(listing.barcode);
   listing.sku = displayValue(listing.sku);
-  const hasVerifiedDraft = Boolean(listing.draft?.metadata?.detectedProductType);
+  const hasVerifiedDraft = hasReviewableDraft(listing) || Boolean(listing.draft?.metadata?.detectedProductType);
   const keywords = hasVerifiedDraft ? listing.keywords || [] : listing.image ? [] : generateKeywords(listing.title, listing.category, listing.metadata);
   const issues = listing.image && !hasVerifiedDraft
     ? ["Analyze the product photo before creating a recommendation."]
@@ -1513,6 +1608,14 @@ async function analyzeListingImage(listing) {
     ...(listing.imageWarning ? [listing.imageWarning] : []),
     "Review the image-verified title and description, then publish when ready."
   ];
+  rememberListingHistory(listing, {
+    status: "draft",
+    draft: listing.draft,
+    keywords: listing.keywords,
+    imageWarning: listing.imageWarning,
+    score: listing.score,
+    optimizedAt: listing.draft.metadata.optimizedAt
+  });
   persistSessionState();
 }
 
@@ -1579,6 +1682,14 @@ async function publishSelected() {
   if (state.mode !== "live") {
     listing.status = "optimized";
     listing.score = 93;
+    rememberListingHistory(listing, {
+      status: "optimized",
+      draft: listing.draft,
+      keywords: listing.keywords,
+      score: listing.score,
+      optimizedAt: listing.draft?.metadata?.optimizedAt || new Date().toISOString(),
+      publishedAt: new Date().toISOString()
+    });
     persistSessionState();
     showToast("Demo publish completed. In live mode this sends through the local proxy.");
     render();
@@ -1594,6 +1705,16 @@ async function publishSelected() {
     listing.title = payload.listing.title;
     listing.description = payload.listing.description;
     listing.batchRequestId = result.batchRequestId || null;
+    listing.score = Math.max(listing.score || 0, result.dryRun ? 86 : 93);
+    rememberListingHistory(listing, {
+      status: listing.status,
+      draft: listing.draft,
+      keywords: listing.keywords,
+      score: listing.score,
+      batchRequestId: listing.batchRequestId,
+      optimizedAt: listing.draft?.metadata?.optimizedAt || new Date().toISOString(),
+      publishedAt: result.dryRun ? "" : new Date().toISOString()
+    });
     persistSessionState();
     showToast(result.message || "Publish request completed.");
     setOperation(result.batchRequestId ? `Publish submitted. Batch ${result.batchRequestId}` : "Publish request completed");
@@ -1659,13 +1780,25 @@ function renderConnection() {
 }
 
 function renderMetrics() {
-  const analyzed = state.listings.filter((item) => item.draft?.metadata?.detectedProductType).length;
-  const needsWork = state.listings.filter((item) => item.status === "needs" || item.status === "review").length;
-  const readyDrafts = state.listings.filter((item) => item.status === "draft").length;
+  const analyzed = state.listings.filter((item) => isPhotoAnalyzed(item)).length;
+  const readyDrafts = state.listings.filter((item) => item.status === "draft" && hasReviewableDraft(item)).length;
+  const needsWork = state.listings.filter((item) => needsPhotoAnalysis(item)).length;
   $("#optimizationScore").textContent = analyzed;
   $("#listingCount").textContent = state.listings.length;
   $("#trafficLift").textContent = readyDrafts;
   $("#needsWork").textContent = needsWork;
+}
+
+function hasReviewableDraft(listing) {
+  return Boolean(listing.draft?.title && listing.draft?.description);
+}
+
+function isPhotoAnalyzed(listing) {
+  return Boolean(listing.draft?.metadata?.detectedProductType || listing.status === "draft" || listing.status === "optimized");
+}
+
+function needsPhotoAnalysis(listing) {
+  return Boolean(listing.image && !isPhotoAnalyzed(listing));
 }
 
 function filteredListings() {
@@ -1743,7 +1876,7 @@ function renderListingRows(listings, emptyMessage) {
 }
 
 function renderListingRow(listing) {
-  const labels = { needs: "Needs analysis", review: "Needs analysis", draft: "Ready to review", optimized: "Published" };
+  const labels = { needs: "Needs analysis", review: "Needs analysis", draft: "Ready to review", optimized: "Optimized" };
   setTimeout(() => bindListingRows(), 0);
   return `
     <button class="listing-row ${listing.id === state.selectedId ? "selected" : ""}" type="button" data-id="${listing.id}">
@@ -1784,7 +1917,7 @@ function renderSelectedListing() {
   els.insightEmpty.classList.add("hidden");
   els.insightBody.classList.remove("hidden");
   els.selectedTitle.textContent = listing.title;
-  els.selectedScore.textContent = listing.status === "draft" ? "Ready to review" : listing.status === "optimized" ? "Published" : "Needs analysis";
+  els.selectedScore.textContent = listing.status === "draft" ? "Ready to review" : listing.status === "optimized" ? "Optimized" : "Needs analysis";
   els.selectedImage.src = listing.image || "";
   els.selectedImage.alt = listing.title;
   els.targetList.innerHTML = listing.issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("");
@@ -1822,7 +1955,7 @@ function renderListingDetails() {
   const recommendationPending = Boolean(listing.image && !listing.draft);
   const images = listing.images?.length ? listing.images : listing.image ? [listing.image] : [];
   els.detailTitle.textContent = listing.title;
-  els.detailStatus.textContent = listing.status === "draft" ? "Ready to review" : listing.status === "optimized" ? "Published" : "Needs analysis";
+  els.detailStatus.textContent = listing.status === "draft" ? "Ready to review" : listing.status === "optimized" ? "Optimized" : "Needs analysis";
   els.detailBody.innerHTML = `
     <div class="detail-grid">
       ${listing.imageWarning ? `<div class="warning-box"><strong>Image mismatch detected</strong><span>${escapeHtml(listing.imageWarning)}</span></div>` : ""}
@@ -2326,7 +2459,10 @@ function applyImportedRows(rows) {
     listing.draft = {
       title: String(row.RecommendedTitle || listing.draft?.title || listing.title).trim(),
       description: String(row.RecommendedDescription || listing.draft?.description || listing.description).trim(),
-      metadata: listing.draft?.metadata || listing.metadata
+      metadata: {
+        ...(listing.draft?.metadata || listing.metadata),
+        optimizedAt: listing.draft?.metadata?.optimizedAt || new Date().toISOString()
+      }
     };
     if (row.SearchTerms) {
       listing.keywords = String(row.SearchTerms)
@@ -2340,7 +2476,14 @@ function applyImportedRows(rows) {
           source: "Imported reviewed Excel"
         }));
     }
-    if (isYes(row.Publish)) listing.status = "draft";
+    if (listing.draft.title && listing.draft.description) listing.status = "draft";
+    rememberListingHistory(listing, {
+      status: listing.status,
+      draft: listing.draft,
+      keywords: listing.keywords,
+      score: Math.max(listing.score || 0, 86),
+      optimizedAt: listing.draft.metadata.optimizedAt
+    });
   });
 }
 
@@ -2352,8 +2495,11 @@ async function publishImportedRows() {
   }
   let published = 0;
   let failed = 0;
+  const byContent = new Map(state.listings.map((listing) => [String(listing.metadata?.contentId || ""), listing]));
+  const byBarcode = new Map(state.listings.map((listing) => [String(listing.barcode || ""), listing]));
   setOperation(`Publishing ${rows.length} imported rows`);
   for (const row of rows) {
+    const listing = byContent.get(String(row.ContentId || "")) || byBarcode.get(String(row.Barcode || ""));
     const payload = {
       dryRun: state.settings.dryRun,
       listing: {
@@ -2368,7 +2514,23 @@ async function publishImportedRows() {
       continue;
     }
     try {
-      await apiFetch("/api/publish", { method: "POST", body: JSON.stringify(payload) });
+      const result = await apiFetch("/api/publish", { method: "POST", body: JSON.stringify(payload) });
+      if (listing) {
+        listing.status = result.dryRun ? "draft" : "optimized";
+        listing.title = payload.listing.title;
+        listing.description = payload.listing.description;
+        listing.batchRequestId = result.batchRequestId || listing.batchRequestId || null;
+        listing.score = Math.max(listing.score || 0, result.dryRun ? 86 : 93);
+        rememberListingHistory(listing, {
+          status: listing.status,
+          draft: listing.draft,
+          keywords: listing.keywords,
+          score: listing.score,
+          batchRequestId: listing.batchRequestId,
+          optimizedAt: listing.draft?.metadata?.optimizedAt || new Date().toISOString(),
+          publishedAt: result.dryRun ? "" : new Date().toISOString()
+        });
+      }
       published += 1;
     } catch {
       failed += 1;
@@ -2378,6 +2540,7 @@ async function publishImportedRows() {
   persistSessionState({ importedRows: state.importedRows });
   showToast(message);
   setOperation(message);
+  render();
 }
 
 function isYes(value) {
