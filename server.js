@@ -22,13 +22,13 @@ const PORT = Number(process.env.PORT || 4173);
 const HOST = process.env.HOST || "0.0.0.0";
 const ROOT = __dirname;
 const EXPORT_DIR = "/Users/user/Documents/listing opt excel";
-let OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
+let OPENAI_API_KEY = sanitizeApiKey(process.env.OPENAI_API_KEY || "");
 let OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 let OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
-let GOOGLE_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+let GOOGLE_API_KEY = sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "");
 let GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 let GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
-let IDEOGRAM_API_KEY = process.env.IDEOGRAM_API_KEY || "";
+let IDEOGRAM_API_KEY = sanitizeApiKey(process.env.IDEOGRAM_API_KEY || "");
 let AI_ANALYSIS_PROVIDER = process.env.AI_ANALYSIS_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 let AI_IMAGE_PROVIDER = process.env.AI_IMAGE_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 const GENERATED_DIR = path.join(ROOT, "generated");
@@ -42,6 +42,25 @@ const MIME_TYPES = {
   ".jpeg": "image/jpeg",
   ".svg": "image/svg+xml"
 };
+
+function sanitizeApiKey(value) {
+  return String(value || "").replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\ufeff]/g, "");
+}
+
+function sanitizeImageUrl(value) {
+  const cleaned = String(value || "").trim().replace(/[\u00a0\u202f\u2007]/g, "");
+  try {
+    return encodeURI(cleaned);
+  } catch {
+    return cleaned;
+  }
+}
+
+function safeImageMimeType(value) {
+  const mimeType = String(value || "").split(";")[0].trim().toLowerCase();
+  if (/^image\/[a-z0-9.+-]+$/.test(mimeType)) return mimeType;
+  return "image/png";
+}
 
 const session = {
   sellerId: process.env.TRENDYOL_SELLER_ID || "",
@@ -652,15 +671,16 @@ async function analyzeNewProductImage(image, outputLanguage = "en") {
 function dataUrlToBlob(dataUrl) {
   const match = String(dataUrl).match(/^data:(.+?);base64,(.+)$/);
   if (!match) throw new Error("Invalid uploaded image.");
-  return new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
+  return new Blob([Buffer.from(match[2], "base64")], { type: safeImageMimeType(match[1]) });
 }
 
 async function imageInputToBlob(image) {
   if (/^data:/i.test(String(image || ""))) return dataUrlToBlob(image);
-  if (!/^https:\/\//i.test(String(image || ""))) throw new Error("A valid product image is required.");
-  const response = await fetch(image);
+  const imageUrl = sanitizeImageUrl(image);
+  if (!/^https:\/\//i.test(imageUrl)) throw new Error("A valid product image is required.");
+  const response = await fetch(imageUrl);
   if (!response.ok) throw new Error(`Could not download the product image (${response.status}).`);
-  const contentType = String(response.headers.get("content-type") || "image/png").split(";")[0];
+  const contentType = safeImageMimeType(response.headers.get("content-type"));
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length || bytes.length > 20 * 1024 * 1024) throw new Error("The product image is empty or too large.");
   return new Blob([bytes], { type: contentType });
@@ -1375,9 +1395,9 @@ async function handleApi(req, res, url) {
 
     if (url.pathname === "/api/config-ai" && req.method === "POST") {
       const body = await requestJson(req);
-      const openAiKey = String(body.openAiApiKey || body.apiKey || "").trim();
-      const googleApiKey = String(body.googleApiKey || "").trim();
-      const ideogramApiKey = String(body.ideogramApiKey || "").trim();
+      const openAiKey = sanitizeApiKey(body.openAiApiKey || body.apiKey || "");
+      const googleApiKey = sanitizeApiKey(body.googleApiKey || "");
+      const ideogramApiKey = sanitizeApiKey(body.ideogramApiKey || "");
       const nextOpenAiKey = openAiKey || OPENAI_API_KEY;
       const nextGoogleApiKey = googleApiKey || GOOGLE_API_KEY;
       const nextIdeogramApiKey = ideogramApiKey || IDEOGRAM_API_KEY;
