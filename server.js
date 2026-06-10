@@ -728,12 +728,12 @@ const FURNITURE_IMAGE_GUIDES = [
     name: "dining table",
     match: ["dining table", "dining set", "kitchen table", "طاولة طعام", "سفرة"],
     scenes: {
-      hero: "Dining room lifestyle hero with the table fully visible and styled for Saudi home dining.",
-      lifestyle: "Dining room lifestyle from another direction with realistic chairs only if they support the table presentation.",
-      features: "Feature image for tabletop, base, finish, stability and easy cleaning.",
-      size: "Dimensions image with multiple table angles and simple average cm values only.",
-      detail: "Marble or wood close-up image showing surface texture, edge profile and finish.",
-      benefits: "Seating capacity image showing practical family dining capacity without crowded styling."
+      hero: "Bright dining room lifestyle hero with the table fully visible and styled for Saudi home dining. Use airy daylight, white or warm neutral walls, light flooring, premium decor and clean HD exposure. Avoid dark rooms, heavy shadows and moody lighting.",
+      lifestyle: "Bright dining room lifestyle from another direction with realistic chairs only if they support the table presentation. Keep the room sunlit, fresh, clean and upscale, with the table clearly visible and not underexposed.",
+      features: "Bright feature image for tabletop, base, finish, stability and easy cleaning. Use light studio-lifestyle styling, clear surface detail and crisp HD exposure without dark backgrounds.",
+      size: "Clean bright dimensions image with multiple table angles and simple average cm values only. Use a white or very light background, balanced spacing and no dark shadows.",
+      detail: "Bright marble or wood close-up image showing surface texture, edge profile and finish. Use soft daylight or studio light so the material looks premium, sharp and not dark.",
+      benefits: "Bright seating capacity image showing practical family dining capacity without crowded styling. Use an airy Saudi dining-room scene with natural daylight and clear table visibility."
     }
   },
   {
@@ -928,6 +928,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
     `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
     guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
+    guide.name === "dining table" ? "Dining table approved style reference: make every dining table image look bright, airy and premium, like a luxury furniture-brand catalog shot in a Saudi dining room during daylight. Use white or warm neutral walls, large windows, light wood or marble tones, clean table styling, soft high-key exposure, crisp HD details and realistic shadows. Do not create dark interiors, brown-heavy rooms, dramatic low light, underexposed corners or gloomy contrast." : "",
     guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: create a realistic premium home photoshoot series. The mirror must stay the same size, shape, frame color and thickness across all images. Lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home, above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. Detail and catalog images must be extra sharp and never blurry." : "",
     guide.name === "decorative vase" ? "Decorative vase approved style reference: create a clear premium ecommerce photoshoot series. Lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. Feature images should show ribbed texture and minimalist design. Size and white-background images must be clean, bright and uncluttered." : "",
     "The uploaded product is the immutable source of truth.",
