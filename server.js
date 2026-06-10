@@ -47,6 +47,10 @@ function sanitizeApiKey(value) {
   return String(value || "").replace(/[\s\u00a0\u1680\u180e\u2000-\u200d\u2028\u2029\u202f\u205f\u2060\ufeff]/g, "");
 }
 
+function safeHeaderValue(value) {
+  return String(value || "").replace(/[^\t\x20-\x7e]/g, "");
+}
+
 function sanitizeImageUrl(value) {
   const cleaned = String(value || "").trim().replace(/[\u00a0\u202f\u2007]/g, "");
   try {
@@ -145,9 +149,9 @@ function friendlyIdeogramError(message) {
 }
 
 function providerKey(provider) {
-  if (provider === "google") return GOOGLE_API_KEY;
-  if (provider === "ideogram") return IDEOGRAM_API_KEY;
-  return OPENAI_API_KEY;
+  if (provider === "google") return sanitizeApiKey(GOOGLE_API_KEY);
+  if (provider === "ideogram") return sanitizeApiKey(IDEOGRAM_API_KEY);
+  return sanitizeApiKey(OPENAI_API_KEY);
 }
 
 function providerLabel(provider) {
@@ -326,7 +330,7 @@ async function requestOpenAiStructuredAnalysis(prompt, image) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      Authorization: safeHeaderValue(`Bearer ${providerKey("openai")}`),
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -357,9 +361,10 @@ async function imageToGeminiPart(image) {
   if (!/^https?:\/\//i.test(String(image || ""))) {
     throw new Error("Google AI requires a valid uploaded image or public image URL.");
   }
-  const response = await fetch(image);
+  const imageUrl = sanitizeImageUrl(image);
+  const response = await fetch(imageUrl);
   if (!response.ok) throw new Error(`Could not download the product image (${response.status}).`);
-  const mimeType = String(response.headers.get("content-type") || "image/jpeg").split(";")[0];
+  const mimeType = safeImageMimeType(response.headers.get("content-type"));
   if (!/^image\/(png|jpeg|webp|heic|heif)$/i.test(mimeType)) {
     throw new Error("The product image format is not supported by Google AI.");
   }
@@ -376,7 +381,7 @@ async function requestGeminiStructuredAnalysis(prompt, image) {
     {
       method: "POST",
       headers: {
-        "x-goog-api-key": GOOGLE_API_KEY,
+        "x-goog-api-key": safeHeaderValue(providerKey("google")),
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
@@ -988,7 +993,7 @@ async function generateOpenAiProductImage({ image, prompt, sceneConfig, scene })
   form.append("output_format", "png");
   const response = await fetch("https://api.openai.com/v1/images/edits", {
     method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    headers: { Authorization: safeHeaderValue(`Bearer ${providerKey("openai")}`) },
     body: form
   });
   const body = await response.json();
@@ -1050,7 +1055,7 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
       {
         method: "POST",
         headers: {
-          "x-goog-api-key": GOOGLE_API_KEY,
+          "x-goog-api-key": safeHeaderValue(providerKey("google")),
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -1090,7 +1095,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
   form.append("transparent_background", "false");
   const response = await fetch("https://api.ideogram.ai/v1/edit", {
     method: "POST",
-    headers: { "Api-Key": IDEOGRAM_API_KEY },
+    headers: { "Api-Key": safeHeaderValue(providerKey("ideogram")) },
     body: form
   });
   const body = await response.json();
@@ -1879,6 +1884,7 @@ async function handleApi(req, res, url) {
 
     sendJson(res, 404, { ok: false, message: "API route not found." });
   } catch (error) {
+    console.error(`[api-error] ${req.method} ${url.pathname}`, error.stack || error.message || error);
     const isGoogleRateLimit = error.provider === "google" && error.statusCode === 429;
     const isOpenAiRateLimit = error.provider === "openai" && error.statusCode === 429;
     const isIdeogramRateLimit = error.provider === "ideogram" && error.statusCode === 429;
