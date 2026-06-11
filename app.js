@@ -187,6 +187,17 @@ const state = {
   sellerLogoData: "",
   sellerLogoPosition: "top-left",
   optimizationHistory: {},
+  account: {
+    id: "",
+    email: "",
+    name: "",
+    loaded: false
+  },
+  authPending: {
+    email: "",
+    location: ""
+  },
+  accountSaveTimer: null,
   lastSyncMessage: "",
   lastOperation: "Ready",
   imageAiAvailable: false,
@@ -210,6 +221,7 @@ const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
 const SESSION_STORAGE_KEY = "trendlift-timed-session";
+const ACCOUNT_STORAGE_KEY = "trendlift-active-account";
 const CATEGORY_DIRECTORY_STORAGE_KEY = "trendlift-category-directory";
 const OPTIMIZATION_HISTORY_STORAGE_KEY = "trendlift-listing-optimization-history";
 const SESSION_CATALOG_LIMIT = 5000;
@@ -244,12 +256,14 @@ const els = {
 };
 
 async function init() {
+  document.body.classList.add("auth-locked");
   loadSavedSettings();
   loadOptimizationHistory();
   bindEvents();
   hydrateSettingsForms();
   bindSessionActivity();
-  await restoreTimedSession();
+  const accountRestored = await restoreActiveAccount();
+  if (!accountRestored) showAuthGate();
   await checkServerStatus();
   startBatchPolling();
   render();
@@ -340,6 +354,16 @@ function bindEvents() {
   $("#publishSettingsForm").addEventListener("submit", savePublishSettings);
   $("#aiSettingsForm").addEventListener("submit", saveAiSettings);
   $("#disconnectBtn").addEventListener("click", disconnectStore);
+  $("#authForm").addEventListener("submit", loginAccount);
+  $("#accountForm").addEventListener("submit", loginAccount);
+  $("#accountSaveBtn").addEventListener("click", () => saveAccountSnapshot({ showMessage: true }));
+  $("#accountSignOutBtn").addEventListener("click", signOutAccount);
+  $("#accountResetStoreBtn").addEventListener("click", resetAccountStore);
+  ["analysisProvider", "imageProvider", "openAiModel", "openAiImageModel", "geminiModel", "geminiImageModel", "ideogramImageModel"].forEach((id) => {
+    const node = $(`#${id}`);
+    if (node) node.addEventListener("input", renderAiUsageEstimate);
+    if (node) node.addEventListener("change", renderAiUsageEstimate);
+  });
 }
 
 function loadSavedSettings() {
@@ -409,9 +433,310 @@ function loadOptimizationHistory() {
 function saveOptimizationHistory() {
   try {
     localStorage.setItem(OPTIMIZATION_HISTORY_STORAGE_KEY, JSON.stringify(state.optimizationHistory));
+    queueAccountSave();
   } catch {
     showToast("Browser storage is full. Listing optimization history may not be saved.");
   }
+}
+
+function readCredentialForm() {
+  return {
+    sellerId: $("#sellerId").value.trim(),
+    apiKey: $("#apiKey").value.trim(),
+    apiSecret: $("#apiSecret").value.trim(),
+    environment: $("#environment").value,
+    storeFrontCode: $("#storeFrontCode").value || "SA"
+  };
+}
+
+function readAiSettingsForm() {
+  return {
+    analysisProvider: $("#analysisProvider").value,
+    imageProvider: $("#imageProvider").value,
+    openAiApiKey: $("#openAiApiKey").value.trim(),
+    openAiModel: $("#openAiModel").value.trim() || "gpt-5.4-mini",
+    openAiImageModel: $("#openAiImageModel").value.trim() || "gpt-image-2",
+    googleApiKey: $("#googleAiApiKey").value.trim(),
+    geminiModel: $("#geminiModel").value.trim() || "gemini-2.5-flash",
+    geminiImageModel: $("#geminiImageModel").value.trim() || "gemini-3-pro-image-preview",
+    ideogramApiKey: $("#ideogramApiKey").value.trim(),
+    ideogramImageModel: $("#ideogramImageModel")?.value || "ideogram-edit"
+  };
+}
+
+function accountStorageSnapshot(update = {}) {
+  const currentSession = readTimedSession() || {};
+  const trendyol = currentSession.trendyol || readCredentialForm();
+  const ai = {
+    ...(currentSession.ai || {}),
+    ...readAiSettingsForm()
+  };
+  return {
+    settings: state.settings,
+    trendyol,
+    ai,
+    listings: state.listings.slice(0, SESSION_CATALOG_LIMIT).map(sessionListingSnapshot),
+    importedRows: state.importedRows,
+    keywordDataset: state.keywordDataset,
+    optimizationHistory: state.optimizationHistory,
+    sellerLogoData: state.sellerLogoData,
+    sellerLogoPosition: state.sellerLogoPosition,
+    latestProductSubmission: state.latestProductSubmission,
+    recentProductSubmissions: state.recentProductSubmissions,
+    savedAt: new Date().toISOString(),
+    ...update
+  };
+}
+
+function setActiveAccount(account) {
+  state.account = {
+    id: account?.id || "",
+    email: account?.email || "",
+    name: account?.name || "",
+    loaded: Boolean(account?.id)
+  };
+  if (state.account.id) {
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(state.account));
+  } else {
+    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  }
+  renderAccountPanel();
+}
+
+function showAuthGate() {
+  document.body.classList.add("auth-locked");
+  $("#authGate").classList.remove("hidden");
+  $("#authError").textContent = "";
+  $("#authOtp").value = "";
+  $("#authOtpWrap").classList.add("hidden");
+  $("#authLoginBtn").innerHTML = `<span data-lucide="mail-check"></span>Send Gmail OTP`;
+  state.authPending = { email: "", location: "" };
+  $("#authEmail").value = state.account.email || $("#authEmail").value || "";
+  $("#authName").value = state.account.name || $("#authName").value || "";
+  refreshIcons();
+}
+
+function hideAuthGate() {
+  document.body.classList.remove("auth-locked");
+  $("#authGate").classList.add("hidden");
+}
+
+function queueAccountSave(update = {}) {
+  if (!state.account.id) return;
+  window.clearTimeout(state.accountSaveTimer);
+  state.accountSaveTimer = window.setTimeout(() => {
+    saveAccountSnapshot({ update }).catch(() => {});
+  }, 500);
+}
+
+async function saveAccountSnapshot(options = {}) {
+  if (!state.account.id) {
+    if (options.showMessage) showToast("Sign in with Gmail first, then save the account.");
+    return false;
+  }
+  const payload = {
+    accountId: state.account.id,
+    email: state.account.email,
+    name: state.account.name,
+    data: accountStorageSnapshot(options.update || {})
+  };
+  const result = await apiFetch("/api/account/save", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  setActiveAccount(result.account);
+  if (options.showMessage) showToast("Account saved. Credentials and listing data will reload after refresh.");
+  return true;
+}
+
+async function restoreActiveAccount() {
+  let savedAccount = null;
+  try {
+    savedAccount = JSON.parse(localStorage.getItem(ACCOUNT_STORAGE_KEY) || "null");
+  } catch {
+    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  }
+  if (!savedAccount?.id || !savedAccount?.email) return false;
+  try {
+    const result = await apiFetch("/api/account/load", {
+      method: "POST",
+      body: JSON.stringify({ accountId: savedAccount.id, email: savedAccount.email })
+    });
+    await applyAccountData(result.account, result.data || {});
+    hideAuthGate();
+    setOperation(`Restored ${result.account.email}`);
+    return true;
+  } catch {
+    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+    return false;
+  }
+}
+
+async function loginAccount(event) {
+  event.preventDefault();
+  const formId = event.currentTarget?.id || "";
+  const isAuthGate = formId === "authForm";
+  const button = isAuthGate ? $("#authLoginBtn") : $("#accountLoginBtn");
+  const otpWrap = isAuthGate ? $("#authOtpWrap") : $("#accountOtpWrap");
+  const otpInput = isAuthGate ? $("#authOtp") : $("#accountOtp");
+  const errorNode = isAuthGate ? $("#authError") : null;
+  button.disabled = true;
+  const email = (isAuthGate ? $("#authEmail").value : $("#accountEmail").value).trim();
+  const name = (isAuthGate ? $("#authName").value : $("#accountName").value).trim();
+  const otp = otpInput?.value.trim() || "";
+  const needsVerify = state.authPending.email === email.toLowerCase() && state.authPending.location === formId && otp;
+  $("#authError").textContent = "";
+  try {
+    if (!needsVerify) {
+      const result = await apiFetch("/api/auth/request-otp", {
+        method: "POST",
+        body: JSON.stringify({ email, name })
+      });
+      state.authPending = { email: email.toLowerCase(), location: formId };
+      otpWrap.classList.remove("hidden");
+      otpInput.value = "";
+      otpInput.focus();
+      button.innerHTML = `<span data-lucide="shield-check"></span>Verify OTP`;
+      const devSuffix = result.devOtp ? ` Code for local testing: ${result.devOtp}` : "";
+      if (errorNode) errorNode.textContent = `${result.message}${devSuffix}`;
+      showToast(`${result.message}${devSuffix}`);
+      refreshIcons();
+      return;
+    }
+    const result = await apiFetch("/api/auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({ email, name, otp })
+    });
+    await applyAccountData(result.account, result.data || {});
+    state.authPending = { email: "", location: "" };
+    otpWrap.classList.add("hidden");
+    otpInput.value = "";
+    hideAuthGate();
+    showToast(result.account.listingCount ? `Welcome back. Restored ${result.account.listingCount} listings.` : "Gmail account ready. Add Trendyol and AI APIs once.");
+    setOperation(`Signed in as ${result.account.email}`);
+  } catch (error) {
+    if (isAuthGate) $("#authError").textContent = error.message || "Could not sign in.";
+    showToast(error.message || "Could not sign in.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function applyAccountData(account, data) {
+  setActiveAccount(account);
+  $("#accountEmail").value = account.email || "";
+  $("#accountName").value = account.name || "";
+  if (data.settings && typeof data.settings === "object") {
+    state.settings = { ...state.settings, ...data.settings, dryRun: false };
+    saveSettings();
+  }
+  if (data.sellerLogoData) {
+    state.sellerLogoData = data.sellerLogoData;
+    localStorage.setItem("trendlift-seller-logo", state.sellerLogoData);
+  }
+  if (data.sellerLogoPosition) {
+    state.sellerLogoPosition = data.sellerLogoPosition === "top-right" ? "top-right" : "top-left";
+    localStorage.setItem("trendlift-logo-position", state.sellerLogoPosition);
+  }
+  if (data.optimizationHistory && typeof data.optimizationHistory === "object") {
+    state.optimizationHistory = data.optimizationHistory;
+    localStorage.setItem(OPTIMIZATION_HISTORY_STORAGE_KEY, JSON.stringify(state.optimizationHistory));
+  }
+  if (Array.isArray(data.keywordDataset)) state.keywordDataset = data.keywordDataset;
+  if (Array.isArray(data.importedRows)) state.importedRows = data.importedRows;
+  if (Array.isArray(data.recentProductSubmissions)) state.recentProductSubmissions = data.recentProductSubmissions;
+  if (data.latestProductSubmission) state.latestProductSubmission = data.latestProductSubmission;
+  localStorage.setItem("trendlift-recent-product-submissions", JSON.stringify(state.recentProductSubmissions || []));
+  if (state.latestProductSubmission) {
+    localStorage.setItem("trendlift-latest-product-submission", JSON.stringify(state.latestProductSubmission));
+    $("#productBatchLookup").value = state.latestProductSubmission.batchRequestId || "";
+  }
+  hydrateSettingsForms();
+  if (data.ai) {
+    await configureAiFromSavedData(data.ai);
+  }
+  if (data.trendyol?.sellerId && data.trendyol?.apiKey && data.trendyol?.apiSecret) {
+    await connectFromSavedData(data.trendyol);
+  }
+  if (Array.isArray(data.listings) && data.listings.length) {
+    state.listings = data.listings.map((listing) => enrichListing(applyListingHistory({ ...listing })));
+    state.selectedId = state.listings.some((listing) => listing.id === state.selectedId)
+      ? state.selectedId
+      : state.listings[0]?.id || null;
+    state.connected = true;
+    state.mode = state.mode === "demo" ? "demo" : "live";
+    state.lastSyncMessage = `${state.listings.length} listings restored from account.`;
+  }
+  persistSessionState({ ai: data.ai || readAiSettingsForm(), trendyol: data.trendyol || readCredentialForm() });
+  renderAccountPanel();
+  renderAiUsageEstimate();
+  render();
+}
+
+async function configureAiFromSavedData(ai) {
+  await apiFetch("/api/config-ai", {
+    method: "POST",
+    body: JSON.stringify(ai)
+  });
+  $("#openAiApiKey").value = ai.openAiApiKey || "";
+  $("#googleAiApiKey").value = ai.googleApiKey || "";
+  $("#ideogramApiKey").value = ai.ideogramApiKey || "";
+  if (ai.analysisProvider) $("#analysisProvider").value = ai.analysisProvider;
+  if (ai.imageProvider) $("#imageProvider").value = ai.imageProvider;
+  if (ai.openAiModel) $("#openAiModel").value = ai.openAiModel;
+  if (ai.openAiImageModel) $("#openAiImageModel").value = ai.openAiImageModel;
+  if (ai.geminiModel) $("#geminiModel").value = ai.geminiModel;
+  if (ai.geminiImageModel) $("#geminiImageModel").value = ai.geminiImageModel;
+  if (ai.ideogramImageModel && $("#ideogramImageModel")) $("#ideogramImageModel").value = ai.ideogramImageModel;
+  state.settings.analysisProvider = $("#analysisProvider").value;
+  state.settings.imageProvider = $("#imageProvider").value;
+}
+
+async function connectFromSavedData(trendyol) {
+  const result = await apiFetch("/api/connect", {
+    method: "POST",
+    body: JSON.stringify(trendyol)
+  });
+  state.connected = true;
+  state.mode = "live";
+  $("#sellerId").value = trendyol.sellerId || "";
+  $("#apiKey").value = trendyol.apiKey || "";
+  $("#apiSecret").value = trendyol.apiSecret || "";
+  $("#environment").value = trendyol.environment || "prod";
+  $("#storeFrontCode").value = result.storeFrontCode || trendyol.storeFrontCode || "SA";
+}
+
+function signOutAccount() {
+  localStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  setActiveAccount(null);
+  clearTimedSession(false);
+  hydrateSettingsForms();
+  showAuthGate();
+  showToast("Signed out on this computer.");
+  setOperation("Signed out");
+  render();
+}
+
+function resetAccountStore() {
+  if (!state.account.id) {
+    showToast("Sign in first, then add another Trendyol store.");
+    return;
+  }
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+  localStorage.removeItem(CATEGORY_DIRECTORY_STORAGE_KEY);
+  clearStoreState();
+  state.optimizationHistory = {};
+  saveOptimizationHistory();
+  saveAccountSnapshot({
+    showMessage: true,
+    update: {
+      trendyol: {},
+      listings: [],
+      optimizationHistory: {}
+    }
+  }).catch((error) => showToast(error.message || "Could not reset store setup."));
+  showToast("Ready for another Trendyol store setup.");
+  render();
 }
 
 function listingHistoryKeys(listing) {
@@ -520,11 +845,24 @@ function persistSessionState(update = {}) {
     keywordDataset: state.keywordDataset,
     ...update
   });
+  queueAccountSave(update);
 }
 
 function clearTimedSession(showMessage = false) {
   localStorage.removeItem(SESSION_STORAGE_KEY);
   localStorage.removeItem(CATEGORY_DIRECTORY_STORAGE_KEY);
+  clearStoreState();
+  $("#openAiApiKey").value = "";
+  $("#googleAiApiKey").value = "";
+  $("#ideogramApiKey").value = "";
+  if (showMessage) {
+    showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
+    setOperation("Session expired");
+    render();
+  }
+}
+
+function clearStoreState() {
   state.connected = false;
   state.mode = "none";
   state.selectedId = null;
@@ -537,15 +875,7 @@ function clearTimedSession(showMessage = false) {
   $("#sellerId").value = "";
   $("#apiKey").value = "";
   $("#apiSecret").value = "";
-  $("#openAiApiKey").value = "";
-  $("#googleAiApiKey").value = "";
-  $("#ideogramApiKey").value = "";
   renderCategoryDirectory();
-  if (showMessage) {
-    showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
-    setOperation("Session expired");
-    render();
-  }
 }
 
 function bindSessionActivity() {
@@ -589,6 +919,7 @@ async function restoreTimedSession() {
       if (saved.ai.openAiImageModel) $("#openAiImageModel").value = saved.ai.openAiImageModel;
       if (saved.ai.geminiModel) $("#geminiModel").value = saved.ai.geminiModel;
       if (saved.ai.geminiImageModel) $("#geminiImageModel").value = saved.ai.geminiImageModel;
+      if (saved.ai.ideogramImageModel && $("#ideogramImageModel")) $("#ideogramImageModel").value = saved.ai.ideogramImageModel;
     }
     if (saved.trendyol) {
       const result = await apiFetch("/api/connect", {
@@ -634,6 +965,68 @@ function hydrateSettingsForms() {
   $("#imageProvider").value = state.settings.imageProvider || "openai";
   $("#sellerLogoPosition").value = state.sellerLogoPosition;
   renderSellerLogoSettings();
+  renderAccountPanel();
+  renderAiUsageEstimate();
+}
+
+function renderAccountPanel() {
+  const signedIn = Boolean(state.account.id);
+  $("#accountStatus").textContent = signedIn ? "Signed in" : "Not signed in";
+  $("#accountStatus").classList.toggle("ready", signedIn);
+  $("#accountEmail").value = state.account.email || $("#accountEmail").value || "";
+  $("#accountName").value = state.account.name || $("#accountName").value || "";
+  $("#accountLoginBtn").innerHTML = `<span data-lucide="${signedIn ? "user-round-cog" : "mail-check"}"></span>${signedIn ? "Switch Gmail account" : "Sign in / create account"}`;
+  $("#accountSaveBtn").disabled = !signedIn;
+  $("#accountResetStoreBtn").disabled = !signedIn;
+  $("#accountSignOutBtn").disabled = !signedIn;
+  const aiReady = Boolean($("#openAiApiKey").value || $("#googleAiApiKey").value || $("#ideogramApiKey").value || state.analysisAiAvailable || state.generationAiAvailable);
+  $("#accountSummary").innerHTML = `
+    <div><strong>Store</strong><span>${state.connected ? `${escapeHtml($("#sellerId").value || "Trendyol")} connected` : "No saved Trendyol store"}</span></div>
+    <div><strong>AI keys</strong><span>${aiReady ? "Saved provider setup" : "No saved AI providers"}</span></div>
+    <div><strong>Listings</strong><span>${state.listings.length.toLocaleString()} saved listings</span></div>
+  `;
+  refreshIcons();
+}
+
+function modelCostLine(provider, model, type) {
+  if (type === "analysis") {
+    if (provider === "google") return `${model || "Gemini"} uses Google AI input/output tokens for each product photo analysis.`;
+    return `${model || "OpenAI"} uses OpenAI vision/text tokens for each product photo analysis.`;
+  }
+  if (provider === "google") return `${model || "Gemini image"} uses one image-generation request per created image.`;
+  if (provider === "ideogram") return `${model || "Ideogram Edit"} uses one Ideogram image edit credit per created image.`;
+  return `${model || "OpenAI image"} uses one OpenAI image-generation request per created image.`;
+}
+
+function renderAiUsageEstimate() {
+  const node = $("#aiUsageEstimate");
+  if (!node) return;
+  const analysisProvider = $("#analysisProvider")?.value || state.settings.analysisProvider || "openai";
+  const imageProvider = $("#imageProvider")?.value || state.settings.imageProvider || "openai";
+  const analysisModel = analysisProvider === "google" ? $("#geminiModel")?.value : $("#openAiModel")?.value;
+  const imageModel = imageProvider === "google"
+    ? $("#geminiImageModel")?.value
+    : imageProvider === "ideogram"
+      ? $("#ideogramImageModel")?.value
+      : $("#openAiImageModel")?.value;
+  node.innerHTML = `
+    <div class="usage-card">
+      <strong>Product analysis</strong>
+      <span>${escapeHtml(providerLabelClient(analysisProvider))} · ${escapeHtml(analysisModel || "Default model")}</span>
+      <p>${escapeHtml(modelCostLine(analysisProvider, analysisModel, "analysis"))}</p>
+    </div>
+    <div class="usage-card">
+      <strong>Image creation</strong>
+      <span>${escapeHtml(providerLabelClient(imageProvider))} · ${escapeHtml(imageModel || "Default model")}</span>
+      <p>${escapeHtml(modelCostLine(imageProvider, imageModel, "image"))}</p>
+    </div>
+  `;
+}
+
+function providerLabelClient(provider) {
+  if (provider === "google") return "Google Gemini";
+  if (provider === "ideogram") return "Ideogram";
+  return "OpenAI";
 }
 
 function setOperation(message) {
@@ -654,11 +1047,18 @@ async function checkServerStatus() {
     state.settings.imageProvider = response.imageProvider || state.settings.imageProvider;
     $("#analysisProvider").value = state.settings.analysisProvider;
     $("#imageProvider").value = state.settings.imageProvider;
+    if (response.openAiModel) $("#openAiModel").value = response.openAiModel;
+    if (response.openAiImageModel) $("#openAiImageModel").value = response.openAiImageModel;
+    if (response.geminiModel) $("#geminiModel").value = response.geminiModel;
+    if (response.geminiImageModel) $("#geminiImageModel").value = response.geminiImageModel;
+    if (response.ideogramImageModel && $("#ideogramImageModel")) $("#ideogramImageModel").value = response.ideogramImageModel;
     updateProviderState("#openAiConfiguredState", response.openAiConfigured);
     updateProviderState("#googleConfiguredState", response.googleAiConfigured);
     updateProviderState("#ideogramConfiguredState", response.ideogramConfigured);
     $("#aiStatus").textContent = state.imageAiAvailable ? "Ready" : state.analysisAiAvailable ? "Analysis ready" : "Not configured";
     $("#createAiStatus").textContent = state.analysisAiAvailable ? "Ready to analyze" : "AI check required";
+    renderAiUsageEstimate();
+    renderAccountPanel();
     renderListingReadiness();
   } catch {
     $("#serverStatus").textContent = "Static mode";
@@ -682,17 +1082,7 @@ async function saveAiSettings(event) {
   event.preventDefault();
   const button = event.submitter;
   button.disabled = true;
-  const aiPayload = {
-    analysisProvider: $("#analysisProvider").value,
-    imageProvider: $("#imageProvider").value,
-    openAiApiKey: $("#openAiApiKey").value.trim(),
-    openAiModel: $("#openAiModel").value.trim(),
-    openAiImageModel: $("#openAiImageModel").value.trim(),
-    googleApiKey: $("#googleAiApiKey").value.trim(),
-    geminiModel: $("#geminiModel").value.trim(),
-    geminiImageModel: $("#geminiImageModel").value.trim(),
-    ideogramApiKey: $("#ideogramApiKey").value.trim()
-  };
+  const aiPayload = readAiSettingsForm();
   try {
     const result = await apiFetch("/api/config-ai", {
       method: "POST",
@@ -717,6 +1107,8 @@ async function saveAiSettings(event) {
     $("#openAiApiKey").value = aiPayload.openAiApiKey || currentSession.ai?.openAiApiKey || "";
     $("#googleAiApiKey").value = aiPayload.googleApiKey || currentSession.ai?.googleApiKey || "";
     $("#ideogramApiKey").value = aiPayload.ideogramApiKey || currentSession.ai?.ideogramApiKey || "";
+    renderAiUsageEstimate();
+    renderAccountPanel();
     updateProviderState("#openAiConfiguredState", result.openAiConfigured);
     updateProviderState("#googleConfiguredState", result.googleAiConfigured);
     updateProviderState("#ideogramConfiguredState", result.ideogramConfigured);
@@ -763,13 +1155,7 @@ function connectDemo() {
 
 async function connectRealStore(event) {
   event.preventDefault();
-  const payload = {
-    sellerId: $("#sellerId").value.trim(),
-    apiKey: $("#apiKey").value.trim(),
-    apiSecret: $("#apiSecret").value.trim(),
-    environment: $("#environment").value,
-    storeFrontCode: $("#storeFrontCode").value
-  };
+  const payload = readCredentialForm();
   if (!payload.sellerId || !payload.apiKey || !payload.apiSecret) {
     showToast("Seller ID, API key, and API secret are required.");
     return;
@@ -1748,6 +2134,8 @@ function selectedListing() {
 }
 
 function render() {
+  renderAccountPanel();
+  renderAiUsageEstimate();
   renderConnection();
   renderMetrics();
   renderDashboardListings();
@@ -2132,15 +2520,9 @@ async function saveSelectedListingImages() {
       method: "POST",
       body: JSON.stringify({
         source: listing.source || listing.metadata || {},
-        contentId: listing.metadata?.contentId || listing.source?.contentId || null,
         barcode: listing.barcode,
         title: listing.title,
         description: listing.description,
-        productMainId: listing.metadata?.productMainId || listing.source?.productMainId || listing.metadata?.modelCode || "",
-        brandId: listing.metadata?.brandId || listing.source?.brandId || listing.source?.brand?.id || "",
-        categoryId: listing.metadata?.categoryId || listing.source?.categoryId || listing.source?.pimCategoryId || listing.source?.category?.id || "",
-        modelCode: listing.metadata?.modelCode || listing.source?.modelCode || "",
-        vatRate: listing.metadata?.vatRate || listing.source?.vatRate || "",
         stockCode: listing.sku,
         images
       })

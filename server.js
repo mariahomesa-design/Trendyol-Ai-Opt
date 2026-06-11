@@ -1,4 +1,5 @@
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { execFile } = require("node:child_process");
@@ -29,9 +30,15 @@ let GOOGLE_API_KEY = sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GO
 let GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 let GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
 let IDEOGRAM_API_KEY = sanitizeApiKey(process.env.IDEOGRAM_API_KEY || "");
+let IDEOGRAM_IMAGE_MODEL = process.env.IDEOGRAM_IMAGE_MODEL || "ideogram-edit";
 let AI_ANALYSIS_PROVIDER = process.env.AI_ANALYSIS_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 let AI_IMAGE_PROVIDER = process.env.AI_IMAGE_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 const GENERATED_DIR = path.join(ROOT, "generated");
+const ACCOUNT_STORE_PATH = path.join(ROOT, ".trendlift-accounts.json");
+const OTP_TTL_MS = 10 * 60 * 1000;
+const RESEND_API_KEY = sanitizeApiKey(process.env.RESEND_API_KEY || "");
+const AUTH_FROM_EMAIL = process.env.AUTH_FROM_EMAIL || "TrendLift <onboarding@resend.dev>";
+const pendingOtps = new Map();
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -177,6 +184,106 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function normalizeAccountEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  if (!/^[^\s@]+@gmail\.com$/.test(email)) {
+    const error = new Error("Enter a valid Gmail address.");
+    error.statusCode = 400;
+    throw error;
+  }
+  return email;
+}
+
+function accountIdForEmail(email) {
+  return crypto.createHash("sha256").update(email).digest("hex").slice(0, 32);
+}
+
+async function readAccountStore() {
+  try {
+    const raw = await fs.readFile(ACCOUNT_STORE_PATH, "utf8");
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? { accounts: parsed.accounts || {} } : { accounts: {} };
+  } catch (error) {
+    if (error.code === "ENOENT") return { accounts: {} };
+    throw error;
+  }
+}
+
+async function writeAccountStore(store) {
+  await fs.writeFile(ACCOUNT_STORE_PATH, JSON.stringify({ accounts: store.accounts || {} }, null, 2));
+}
+
+function accountSummary(account) {
+  const data = account.data || {};
+  return {
+    id: account.id,
+    email: account.email,
+    name: account.name || "",
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+    hasTrendyol: Boolean(data.trendyol?.sellerId),
+    hasAi: Boolean(data.ai?.openAiApiKey || data.ai?.googleApiKey || data.ai?.ideogramApiKey),
+    listingCount: Array.isArray(data.listings) ? data.listings.length : 0
+  };
+}
+
+async function findAccount({ accountId, email }) {
+  const store = await readAccountStore();
+  const normalizedEmail = email ? normalizeAccountEmail(email) : "";
+  const id = accountId || (normalizedEmail ? accountIdForEmail(normalizedEmail) : "");
+  if (!id || !store.accounts[id]) return { store, account: null, id, email: normalizedEmail };
+  return { store, account: store.accounts[id], id, email: normalizedEmail };
+}
+
+function createOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+async function sendOtpEmail(email, code) {
+  if (!RESEND_API_KEY) {
+    return { sent: false, reason: "RESEND_API_KEY is not configured." };
+  }
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${safeHeaderValue(RESEND_API_KEY)}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      from: AUTH_FROM_EMAIL,
+      to: [email],
+      subject: "Your TrendLift login code",
+      html: `<p>Your TrendLift login code is:</p><h2>${code}</h2><p>This code expires in 10 minutes.</p>`,
+      text: `Your TrendLift login code is ${code}. This code expires in 10 minutes.`
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(body.message || body.error || `Could not send OTP email (${response.status}).`);
+    error.statusCode = response.status;
+    throw error;
+  }
+  return { sent: true };
+}
+
+async function createOrLoadAccount(email, name) {
+  const id = accountIdForEmail(email);
+  const store = await readAccountStore();
+  const now = new Date().toISOString();
+  const existing = store.accounts[id] || {
+    id,
+    email,
+    createdAt: now,
+    data: {}
+  };
+  existing.email = email;
+  existing.name = String(name || existing.name || email.split("@")[0]).trim();
+  existing.updatedAt = now;
+  store.accounts[id] = existing;
+  await writeAccountStore(store);
+  return existing;
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
@@ -248,12 +355,6 @@ async function trendyolFetch(endpoint, options = {}) {
     throw error;
   }
   return body;
-}
-
-function compactTrendyolError(error) {
-  const body = error?.body || {};
-  const detail = body.message || body.error || body.raw || "";
-  return `${error?.statusCode || "error"}${detail ? ` ${detail}` : ""}`.trim();
 }
 
 async function optimizeWithImage(listing) {
@@ -1114,7 +1215,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
   if (!imageResponse.ok) throw new Error("Could not download the generated Ideogram image.");
   return {
     ...await saveGeneratedPortrait(Buffer.from(await imageResponse.arrayBuffer()), sceneConfig.label, scene),
-    modelUsed: "ideogram-edit",
+    modelUsed: IDEOGRAM_IMAGE_MODEL || "ideogram-edit",
     usedFallback: false
   };
 }
@@ -1352,6 +1453,123 @@ async function handleApi(req, res, url) {
       return;
     }
 
+    if (url.pathname === "/api/account/login" && req.method === "POST") {
+      const body = await requestJson(req);
+      const email = normalizeAccountEmail(body.email);
+      if (!body.otp) {
+        const code = createOtp();
+        pendingOtps.set(email, {
+          code,
+          name: String(body.name || "").trim(),
+          expiresAt: Date.now() + OTP_TTL_MS,
+          attempts: 0
+        });
+        const emailResult = await sendOtpEmail(email, code);
+        sendJson(res, 200, {
+          ok: true,
+          otpRequired: true,
+          message: emailResult.sent
+            ? "OTP sent to Gmail. Paste the code to continue."
+            : "OTP created. Add RESEND_API_KEY on Railway to send it by email.",
+          devOtp: emailResult.sent ? undefined : code
+        });
+        return;
+      }
+      const pending = pendingOtps.get(email);
+      if (!pending || pending.expiresAt < Date.now()) {
+        pendingOtps.delete(email);
+        sendJson(res, 400, { ok: false, message: "OTP expired. Request a new Gmail OTP." });
+        return;
+      }
+      pending.attempts += 1;
+      if (pending.attempts > 5 || String(body.otp || "").trim() !== pending.code) {
+        sendJson(res, 400, { ok: false, message: "Invalid OTP. Check Gmail and try again." });
+        return;
+      }
+      pendingOtps.delete(email);
+      const existing = await createOrLoadAccount(email, body.name || pending.name);
+      sendJson(res, 200, { ok: true, account: accountSummary(existing), data: existing.data || {} });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/request-otp" && req.method === "POST") {
+      const body = await requestJson(req);
+      const email = normalizeAccountEmail(body.email);
+      const code = createOtp();
+      pendingOtps.set(email, {
+        code,
+        name: String(body.name || "").trim(),
+        expiresAt: Date.now() + OTP_TTL_MS,
+        attempts: 0
+      });
+      const emailResult = await sendOtpEmail(email, code);
+      sendJson(res, 200, {
+        ok: true,
+        otpRequired: true,
+        message: emailResult.sent
+          ? "OTP sent to Gmail. Paste the code to continue."
+          : "OTP created. Add RESEND_API_KEY on Railway to send it by email.",
+        devOtp: emailResult.sent ? undefined : code
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/verify-otp" && req.method === "POST") {
+      const body = await requestJson(req);
+      const email = normalizeAccountEmail(body.email);
+      const pending = pendingOtps.get(email);
+      if (!pending || pending.expiresAt < Date.now()) {
+        pendingOtps.delete(email);
+        sendJson(res, 400, { ok: false, message: "OTP expired. Request a new Gmail OTP." });
+        return;
+      }
+      pending.attempts += 1;
+      if (pending.attempts > 5 || String(body.otp || "").trim() !== pending.code) {
+        sendJson(res, 400, { ok: false, message: "Invalid OTP. Check Gmail and try again." });
+        return;
+      }
+      pendingOtps.delete(email);
+      const account = await createOrLoadAccount(email, body.name || pending.name);
+      sendJson(res, 200, { ok: true, account: accountSummary(account), data: account.data || {} });
+      return;
+    }
+
+    if (url.pathname === "/api/account/load" && req.method === "POST") {
+      const body = await requestJson(req);
+      const { account } = await findAccount({ accountId: body.accountId, email: body.email });
+      if (!account) {
+        sendJson(res, 404, { ok: false, message: "No saved account was found for this Gmail address." });
+        return;
+      }
+      sendJson(res, 200, { ok: true, account: accountSummary(account), data: account.data || {} });
+      return;
+    }
+
+    if (url.pathname === "/api/account/save" && req.method === "POST") {
+      const body = await requestJson(req);
+      const email = normalizeAccountEmail(body.email);
+      const id = body.accountId || accountIdForEmail(email);
+      const store = await readAccountStore();
+      const now = new Date().toISOString();
+      const existing = store.accounts[id] || {
+        id,
+        email,
+        createdAt: now,
+        data: {}
+      };
+      existing.email = email;
+      existing.name = String(body.name || existing.name || email.split("@")[0]).trim();
+      existing.data = {
+        ...(existing.data || {}),
+        ...(body.data && typeof body.data === "object" ? body.data : {})
+      };
+      existing.updatedAt = now;
+      store.accounts[id] = existing;
+      await writeAccountStore(store);
+      sendJson(res, 200, { ok: true, account: accountSummary(existing) });
+      return;
+    }
+
     if (url.pathname === "/api/status") {
       const analysisReady = Boolean(providerKey(AI_ANALYSIS_PROVIDER));
       const imageReady = Boolean(providerKey(AI_IMAGE_PROVIDER));
@@ -1370,6 +1588,11 @@ async function handleApi(req, res, url) {
         openAiConfigured: Boolean(OPENAI_API_KEY),
         googleAiConfigured: Boolean(GOOGLE_API_KEY),
         ideogramConfigured: Boolean(IDEOGRAM_API_KEY),
+        openAiModel: OPENAI_MODEL,
+        openAiImageModel: OPENAI_IMAGE_MODEL,
+        geminiModel: GEMINI_MODEL,
+        geminiImageModel: GEMINI_IMAGE_MODEL,
+        ideogramImageModel: IDEOGRAM_IMAGE_MODEL,
         publicImageHosting: Boolean(publicBaseUrl(req)),
         publicBaseUrl: publicBaseUrl(req),
         imageAiModel: AI_ANALYSIS_PROVIDER === "google" ? GEMINI_MODEL : OPENAI_MODEL
@@ -1428,6 +1651,7 @@ async function handleApi(req, res, url) {
       OPENAI_IMAGE_MODEL = String(body.openAiImageModel || body.imageModel || OPENAI_IMAGE_MODEL || "gpt-image-2").trim();
       GEMINI_MODEL = String(body.geminiModel || GEMINI_MODEL || "gemini-2.5-flash").trim();
       GEMINI_IMAGE_MODEL = String(body.geminiImageModel || GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview").trim();
+      IDEOGRAM_IMAGE_MODEL = String(body.ideogramImageModel || IDEOGRAM_IMAGE_MODEL || "ideogram-edit").trim();
       AI_ANALYSIS_PROVIDER = nextAnalysisProvider;
       AI_IMAGE_PROVIDER = nextImageProvider;
       sendJson(res, 200, {
@@ -1439,7 +1663,7 @@ async function handleApi(req, res, url) {
         imageModel: AI_IMAGE_PROVIDER === "google"
           ? GEMINI_IMAGE_MODEL
           : AI_IMAGE_PROVIDER === "ideogram"
-            ? "ideogram-edit"
+            ? IDEOGRAM_IMAGE_MODEL
             : OPENAI_IMAGE_MODEL,
         openAiConfigured: Boolean(OPENAI_API_KEY),
         googleAiConfigured: Boolean(GOOGLE_API_KEY),
@@ -1758,15 +1982,15 @@ async function handleApi(req, res, url) {
         title: String(source.title || body.title || "").trim().slice(0, 100),
         description: String(source.description || body.description || "").trim(),
         productMainId: String(source.productMainId || source.modelCode || body.modelCode || body.productMainId || "").trim(),
-        brandId: Number(source.brandId || source.brand?.id || body.brandId),
-        categoryId: Number(source.categoryId || source.pimCategoryId || source.category?.id || body.categoryId),
+        brandId: Number(source.brandId || source.brand?.id),
+        categoryId: Number(source.categoryId || source.pimCategoryId || source.category?.id),
         quantity: Number(sourceStock.quantity ?? variant.quantity ?? source.quantity ?? body.quantity ?? 0),
         stockCode: String(variant.stockCode || source.stockCode || source.stockId || body.stockCode || "").trim(),
         origin: String(source.origin || "SA").slice(0, 2),
         dimensionalWeight: Number(variant.dimensionalWeight || source.dimensionalWeight || 1),
         listPrice: Number(sourcePrice.listPrice || source.listPrice || body.listPrice),
         salePrice: Number(sourcePrice.salePrice || source.salePrice || source.discountedPrice || body.salePrice),
-        vatRate: Number(variant.vatRate || source.vatRate || body.vatRate || 15),
+        vatRate: Number(variant.vatRate || source.vatRate || 15),
         images: images.map((image) => ({ url: image })),
         attributes: Array.isArray(source.attributes)
           ? source.attributes.map((attribute) => ({
@@ -1790,44 +2014,15 @@ async function handleApi(req, res, url) {
         sendJson(res, 400, { ok: false, message: `Trendyol did not return enough data to update images. Missing: ${missing.join(", ")}.` });
         return;
       }
-      const attempts = [];
-      let result;
-      try {
-        result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
-          method: "PUT",
-          storeFrontCode: session.storeFrontCode,
-          acceptLanguage: "en",
-          body: JSON.stringify({ items: [item] })
-        });
-      } catch (error) {
-        attempts.push(`PUT /v2/products: ${compactTrendyolError(error)}`);
-        const contentId = Number(source.contentId || body.contentId);
-        if (!contentId || error.statusCode !== 404) throw error;
-        try {
-          result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/products/content-bulk-update`, {
-            method: "POST",
-            storeFrontCode: session.storeFrontCode,
-            acceptLanguage: session.storeFrontCode ? "en" : undefined,
-            body: JSON.stringify({
-              items: [{
-                contentId,
-                images: images.map((image) => ({ url: image }))
-              }]
-            })
-          });
-        } catch (fallbackError) {
-          attempts.push(`POST /content-bulk-update images: ${compactTrendyolError(fallbackError)}`);
-          const errorMessage = `Trendyol could not update these images. Tried ${attempts.join(" | ")}. This product may not support image-only updates from API; sync the product again or update images in Seller Center.`;
-          const updateError = new Error(errorMessage);
-          updateError.statusCode = fallbackError.statusCode || error.statusCode || 400;
-          updateError.body = { attempts, primary: error.body, fallback: fallbackError.body };
-          throw updateError;
-        }
-      }
+      const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/v2/products`, {
+        method: "PUT",
+        storeFrontCode: session.storeFrontCode,
+        acceptLanguage: "en",
+        body: JSON.stringify({ items: [item] })
+      });
       sendJson(res, 200, {
         ok: true,
         batchRequestId: result.batchRequestId || null,
-        attempts,
         message: result.batchRequestId
           ? `Image update submitted. Batch request ID: ${result.batchRequestId}`
           : "Image update submitted to Trendyol."

@@ -13,6 +13,39 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <section class="auth-gate" id="authGate" aria-labelledby="authGateTitle">
+      <div class="auth-card">
+        <div class="brand auth-brand">
+          <div class="brand-mark">TL</div>
+          <div>
+            <strong>TrendLift</strong>
+            <span>Trendyol optimizer</span>
+          </div>
+        </div>
+        <p class="eyebrow">Seller login</p>
+        <h1 id="authGateTitle">Sign in with Gmail to continue</h1>
+        <p class="auth-copy">Every seller must sign in first. Your Trendyol store, API keys, AI models, listings, drafts, and history are saved under this Gmail account.</p>
+        <form class="auth-form" id="authForm">
+          <label>
+            Gmail address
+            <input id="authEmail" type="email" autocomplete="email" placeholder="seller@gmail.com" required />
+          </label>
+          <label>
+            Account name
+            <input id="authName" autocomplete="name" placeholder="Maria Homes" />
+          </label>
+          <label class="hidden" id="authOtpWrap">
+            Paste OTP from Gmail
+            <input id="authOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
+          </label>
+          <button class="primary-btn full" id="authLoginBtn" type="submit">
+            <span data-lucide="mail-check"></span>
+            Send Gmail OTP
+          </button>
+          <p class="auth-error" id="authError" role="alert"></p>
+        </form>
+      </div>
+    </section>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
@@ -552,6 +585,55 @@
         </section>
 
         <section class="view-section" id="settingsView" data-view-panel="settings">
+          <div class="panel account-panel">
+            <div class="panel-header compact">
+              <div>
+                <p class="eyebrow">Account</p>
+                <h2>Gmail seller account</h2>
+              </div>
+              <span class="score-pill" id="accountStatus">Not signed in</span>
+            </div>
+            <form class="settings-form account-form" id="accountForm">
+              <p class="field-note">Sign in with your Gmail address to keep Trendyol credentials, AI API keys, synced listings, drafts, logo, and optimization history in this seller account.</p>
+              <div class="account-fields">
+                <label>
+                  Gmail address
+                  <input id="accountEmail" type="email" autocomplete="email" placeholder="seller@gmail.com" />
+                </label>
+                <label>
+                  Account name
+                  <input id="accountName" autocomplete="name" placeholder="Maria Homes" />
+                </label>
+                <label class="hidden" id="accountOtpWrap">
+                  Paste OTP from Gmail
+                  <input id="accountOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
+                </label>
+              </div>
+              <div class="account-summary-grid" id="accountSummary">
+                <div><strong>Store</strong><span>No saved Trendyol store</span></div>
+                <div><strong>AI keys</strong><span>No saved AI providers</span></div>
+                <div><strong>Listings</strong><span>0 saved listings</span></div>
+              </div>
+              <div class="button-grid">
+                <button class="primary-btn" id="accountLoginBtn" type="submit">
+                  <span data-lucide="mail-check"></span>
+                  Sign in / create account
+                </button>
+                <button class="ghost-btn" id="accountSaveBtn" type="button">
+                  <span data-lucide="cloud-upload"></span>
+                  Save account now
+                </button>
+                <button class="ghost-btn" id="accountResetStoreBtn" type="button">
+                  <span data-lucide="store"></span>
+                  Add another Trendyol store
+                </button>
+                <button class="ghost-btn" id="accountSignOutBtn" type="button">
+                  <span data-lucide="log-out"></span>
+                  Sign out
+                </button>
+              </div>
+            </form>
+          </div>
           <div class="settings-grid">
             <div class="panel">
               <div class="panel-header compact">
@@ -674,13 +756,25 @@
                   <div class="provider-models">
                     <label>
                       Analysis model
-                      <input id="openAiModel" value="gpt-5.4-mini" />
+                      <input id="openAiModel" value="gpt-5.4-mini" list="openAiAnalysisModels" />
                     </label>
                     <label>
                       Image model
-                      <input id="openAiImageModel" value="gpt-image-2" />
+                      <input id="openAiImageModel" value="gpt-image-2" list="openAiImageModels" />
                     </label>
                   </div>
+                  <datalist id="openAiAnalysisModels">
+                    <option value="gpt-5.4-mini"></option>
+                    <option value="gpt-5.4"></option>
+                    <option value="gpt-4.1"></option>
+                    <option value="gpt-4.1-mini"></option>
+                    <option value="gpt-4o"></option>
+                    <option value="gpt-4o-mini"></option>
+                  </datalist>
+                  <datalist id="openAiImageModels">
+                    <option value="gpt-image-2"></option>
+                    <option value="gpt-image-1"></option>
+                  </datalist>
                   <div class="button-grid">
                     <a class="ghost-btn link-btn" href="https://platform.openai.com/account/rate-limits" target="_blank" rel="noreferrer">
                       <span data-lucide="gauge"></span>
@@ -708,7 +802,7 @@
                   <div class="provider-models">
                     <label>
                       Analysis model
-                      <input id="geminiModel" value="gemini-2.5-flash" />
+                      <input id="geminiModel" value="gemini-2.5-flash" list="geminiAnalysisModels" />
                     </label>
                     <label>
                       Image model
@@ -719,6 +813,12 @@
                       </select>
                     </label>
                   </div>
+                  <datalist id="geminiAnalysisModels">
+                    <option value="gemini-2.5-pro"></option>
+                    <option value="gemini-2.5-flash"></option>
+                    <option value="gemini-2.5-flash-lite"></option>
+                    <option value="gemini-2.0-flash"></option>
+                  </datalist>
                   <a class="ghost-btn link-btn" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
                     <span data-lucide="key-round"></span>
                     Get Google AI API key
@@ -737,6 +837,12 @@
                     Add or replace Ideogram API key
                     <input id="ideogramApiKey" type="password" autocomplete="off" placeholder="Ideogram API key" />
                   </label>
+                  <label>
+                    Image model
+                    <select id="ideogramImageModel">
+                      <option value="ideogram-edit" selected>Ideogram Edit · Reference image</option>
+                    </select>
+                  </label>
                   <div class="marketplace-note">
                     <strong>Reference image edit</strong>
                     <span>Uses the uploaded product image with a native 2:3 portrait request, then normalizes the result to 1200 × 1800 px.</span>
@@ -746,6 +852,7 @@
                     Manage Ideogram API
                   </a>
                 </section>
+                <section class="usage-estimate" id="aiUsageEstimate" aria-live="polite"></section>
                 <button class="primary-btn" type="submit">
                   <span data-lucide="save"></span>
                   Save AI providers
