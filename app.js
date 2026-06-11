@@ -905,7 +905,7 @@ async function syncListings() {
       if (state.settings.storeFrontCode) {
         state.lastSyncMessage += ` Storefront tested: ${state.settings.storeFrontCode}.`;
       } else {
-        state.lastSyncMessage += " The proxy also tried common storefront codes automatically.";
+        state.lastSyncMessage += " The app also tried common storefront codes automatically.";
       }
       showToast("Connected, but Trendyol returned 0 listings. See the Listings empty state for checks.");
       setOperation("Sync completed with 0 listings returned from Trendyol");
@@ -919,7 +919,7 @@ async function syncListings() {
     persistSessionState();
     setView("listings");
   } catch (error) {
-    showToast(error.message || "Live sync failed. Check credentials and local proxy.");
+    showToast(error.message || "Live sync failed. Check credentials and app API server.");
     setOperation(`Sync failed: ${error.message || "unknown error"}`);
   } finally {
     $("#syncBtn").disabled = false;
@@ -1759,7 +1759,7 @@ async function publishSelected() {
       publishedAt: new Date().toISOString()
     });
     persistSessionState();
-    showToast("Demo publish completed. In live mode this sends through the local proxy.");
+    showToast("Demo publish completed. In live mode this sends through the app API server.");
     render();
     return;
   }
@@ -1788,7 +1788,7 @@ async function publishSelected() {
     setOperation(result.batchRequestId ? `Publish submitted. Batch ${result.batchRequestId}` : "Publish request completed");
     render();
   } catch (error) {
-    showToast(error.message || "Publish failed. Review proxy logs.");
+    showToast(error.message || "Publish failed. Review app API server logs.");
     setOperation(`Publish failed: ${error.message || "unknown error"}`);
   } finally {
     els.publishBtn.innerHTML = `<span data-lucide="send"></span> Publish approved changes`;
@@ -1831,7 +1831,7 @@ function renderConnection() {
   els.connectBanner.classList.toggle("hidden", state.connected);
   const label = state.mode === "live" ? "Live store connected" : state.mode === "demo" ? "Demo store connected" : "Not connected";
   const detail = state.mode === "live"
-    ? `${state.listings.length} listings synced through local proxy.`
+    ? `${state.listings.length} listings synced through app API server.`
     : state.mode === "demo"
       ? "Demo data loaded for full workflow testing."
       : "Add Trendyol credentials in Settings, or load demo data.";
