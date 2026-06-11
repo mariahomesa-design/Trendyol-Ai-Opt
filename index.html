@@ -13,39 +13,6 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section class="auth-gate" id="authGate" aria-labelledby="authGateTitle">
-      <div class="auth-card">
-        <div class="brand auth-brand">
-          <div class="brand-mark">TL</div>
-          <div>
-            <strong>TrendLift</strong>
-            <span>Trendyol optimizer</span>
-          </div>
-        </div>
-        <p class="eyebrow">Seller login</p>
-        <h1 id="authGateTitle">Sign in with Gmail to continue</h1>
-        <p class="auth-copy">Every seller must sign in first. Your Trendyol store, API keys, AI models, listings, drafts, and history are saved under this Gmail account.</p>
-        <form class="auth-form" id="authForm">
-          <label>
-            Gmail address
-            <input id="authEmail" type="email" autocomplete="email" placeholder="seller@gmail.com" required />
-          </label>
-          <label>
-            Account name
-            <input id="authName" autocomplete="name" placeholder="Maria Homes" />
-          </label>
-          <label class="hidden" id="authOtpWrap">
-            Paste OTP from Gmail
-            <input id="authOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
-          </label>
-          <button class="primary-btn full" id="authLoginBtn" type="submit">
-            <span data-lucide="mail-check"></span>
-            Send Gmail OTP
-          </button>
-          <p class="auth-error" id="authError" role="alert"></p>
-        </form>
-      </div>
-    </section>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
@@ -585,55 +552,6 @@
         </section>
 
         <section class="view-section" id="settingsView" data-view-panel="settings">
-          <div class="panel account-panel">
-            <div class="panel-header compact">
-              <div>
-                <p class="eyebrow">Account</p>
-                <h2>Gmail seller account</h2>
-              </div>
-              <span class="score-pill" id="accountStatus">Not signed in</span>
-            </div>
-            <form class="settings-form account-form" id="accountForm">
-              <p class="field-note">Sign in with your Gmail address to keep Trendyol credentials, AI API keys, synced listings, drafts, logo, and optimization history in this seller account.</p>
-              <div class="account-fields">
-                <label>
-                  Gmail address
-                  <input id="accountEmail" type="email" autocomplete="email" placeholder="seller@gmail.com" />
-                </label>
-                <label>
-                  Account name
-                  <input id="accountName" autocomplete="name" placeholder="Maria Homes" />
-                </label>
-                <label class="hidden" id="accountOtpWrap">
-                  Paste OTP from Gmail
-                  <input id="accountOtp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" />
-                </label>
-              </div>
-              <div class="account-summary-grid" id="accountSummary">
-                <div><strong>Store</strong><span>No saved Trendyol store</span></div>
-                <div><strong>AI keys</strong><span>No saved AI providers</span></div>
-                <div><strong>Listings</strong><span>0 saved listings</span></div>
-              </div>
-              <div class="button-grid">
-                <button class="primary-btn" id="accountLoginBtn" type="submit">
-                  <span data-lucide="mail-check"></span>
-                  Sign in / create account
-                </button>
-                <button class="ghost-btn" id="accountSaveBtn" type="button">
-                  <span data-lucide="cloud-upload"></span>
-                  Save account now
-                </button>
-                <button class="ghost-btn" id="accountResetStoreBtn" type="button">
-                  <span data-lucide="store"></span>
-                  Add another Trendyol store
-                </button>
-                <button class="ghost-btn" id="accountSignOutBtn" type="button">
-                  <span data-lucide="log-out"></span>
-                  Sign out
-                </button>
-              </div>
-            </form>
-          </div>
           <div class="settings-grid">
             <div class="panel">
               <div class="panel-header compact">
