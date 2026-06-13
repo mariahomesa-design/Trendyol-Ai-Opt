@@ -802,6 +802,18 @@ async function imageInputToBlob(image) {
 
 const FURNITURE_IMAGE_GUIDES = [
   {
+    name: "tv stand / media console",
+    match: ["tv stand", "tv unit", "media console", "tv console", "television stand", "entertainment unit", "console table", "sideboard", "buffet cabinet", "طاولة تلفاز", "طاولة تلفزيون", "وحدة تلفزيون", "كونسول"],
+    scenes: {
+      hero: "Lifestyle hero in a premium living room or media wall setup. The TV stand/media console must sit naturally below or near a wall-mounted TV or styled media wall, fully visible, with warm room lighting, rug, wall art, plants or decor used only as supporting context.",
+      lifestyle: "Second lifestyle image from another living-room angle. Show the same TV stand/media console in a realistic home setting with different camera composition, such as angled view, media wall view, or styled storage/decor view. Product must remain fully visible.",
+      features: "Feature image for shelves, cabinet doors, handles, storage, cable opening, finish and legs.",
+      size: "Dimensions image with multiple console angles and simple average cm values only.",
+      detail: "Material detail close-up showing wood grain, rattan/cane panel, handle, leg or surface finish.",
+      benefits: "Storage and media organization image showing TV equipment, books or decor neatly placed."
+    }
+  },
+  {
     name: "dining chair",
     match: ["dining chair", "dining chairs", "kitchen chair", "cane dining chair", "rattan dining chair", "كرسي طعام", "كراسي طعام"],
     scenes: {
@@ -950,12 +962,13 @@ function imageGuideFor(productType, title) {
 }
 
 function sceneLifestyleRules(scene, guideName) {
-  const categoryExamples = "Choose the correct real-use environment for the detected product: sofa in a living room, chair in its correct room, dining chair or dining table in a dining room, office chair in an office, bed in a bedroom, shoe cabinet or console in an entryway or living room, mirror on a wall above a console/vanity/sink, vase on a table or shelf, wall art on a styled wall.";
+  const categoryExamples = "Choose the correct real-use environment for the detected product: sofa in a living room, TV stand/media console in a living room below a TV or styled media wall, chair in its correct room, dining chair or dining table in a dining room, office chair in an office, bed in a bedroom, shoe cabinet in an entryway, mirror on a wall above a console/vanity/sink, vase on a table or shelf, wall art on a styled wall.";
   if (scene === "hero") {
     return [
       "HARD REQUIREMENT FOR IMAGE 1: this must be a lifestyle image, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
       "Replace the source photo background with a complete realistic room. Do not keep the uploaded photo's original white, grey or plain background.",
       "Show the product as the hero item in a realistic premium environment that matches its category. The complete product must be fully visible from edge to edge, clear, sharp, correctly scaled and not cropped.",
+      "The product must not float in the middle of blank space. It must stand on a realistic floor or surface inside the room with visible wall, floor, furniture/decor context and natural shadows.",
       "The room must complement the product and look like a professional furniture or home-decor brand photoshoot with natural daylight, realistic shadows, clean styling and premium materials.",
       categoryExamples,
       "Do not place the product alone on a plain white or grey studio background for image 1."
@@ -968,6 +981,7 @@ function sceneLifestyleRules(scene, guideName) {
       "Use a different camera angle, product placement or composition from image 1 while keeping the same exact product identity and a matching premium environment.",
       "If the item naturally belongs to a set, such as dining chairs, bar stools, paired side tables, paired decor or modular seating, show the set clearly and realistically. If it is not a set item, show the same single product from another perspective only.",
       "The complete product or set must be fully visible, clear, sharp, correctly scaled and not cropped.",
+      "The product must not float in the middle of blank space. It must stand on a realistic floor or surface inside the room with visible wall, floor, furniture/decor context and natural shadows.",
       categoryExamples,
       "Do not place the product alone on a plain white or grey studio background for image 2."
     ].join(" ");
@@ -1088,7 +1102,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
   }
   const guide = imageGuideFor(productType, title);
   const lifestyleScene = isRequiredLifestyleScene(scene);
-  const prompt = [
+  const basePrompt = [
     lifestyleScene
       ? `Edit the uploaded reference into a professional lifestyle photograph of this exact ${productType || "product"} (${title || ""}). Preserve the product, but replace the plain/source background with a realistic furnished environment.`
       : `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
@@ -1112,11 +1126,40 @@ async function generateProductImage({ image, productType, title, scene, customPr
     AI_IMAGE_PROVIDER === "google" && sceneConfig.geminiPrompt ? sceneConfig.geminiPrompt : sceneConfig.prompt,
     customPrompt ? `Additional seller direction: ${String(customPrompt).slice(0, 1000)}` : ""
   ].filter(Boolean).join(" ");
+
+  const maxAttempts = lifestyleScene ? 2 : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const retryPrompt = attempt > 1
+      ? [
+          "RETRY BECAUSE THE PREVIOUS IMAGE WAS REJECTED: the last result looked like a white/plain catalog image.",
+          "This time you must create a true lifestyle room photo. Fill the portrait frame with a realistic furnished room, wall, floor, decor and natural lighting.",
+          "Do not leave a large blank white, beige, grey or empty area above or around the product.",
+          "For a TV stand/media console, show it in a living room below a TV or styled media wall, with rug, wall decor, plants or media objects as natural context."
+        ].join(" ")
+      : "";
+    const prompt = [basePrompt, retryPrompt].filter(Boolean).join("\n");
+    try {
+      const result = await requestProductImageFromProvider({ image, prompt, sceneConfig, scene, attempt });
+      await validateGeneratedLifestyleResult(result, scene);
+      return result;
+    } catch (error) {
+      lastError = error;
+      if (error.generatedImagePath) {
+        await fs.unlink(error.generatedImagePath).catch(() => {});
+      }
+      if (!lifestyleScene || attempt === maxAttempts || !error.retryLifestyle) throw error;
+    }
+  }
+  throw lastError || new Error("Image generation failed.");
+}
+
+async function requestProductImageFromProvider({ image, prompt, sceneConfig, scene, attempt = 1 }) {
   if (AI_IMAGE_PROVIDER === "google") {
     return generateGeminiProductImage({ image, prompt, sceneConfig, scene });
   }
   if (AI_IMAGE_PROVIDER === "ideogram") {
-    return generateIdeogramProductImage({ image, prompt, sceneConfig, scene });
+    return generateIdeogramProductImage({ image, prompt, sceneConfig, scene, attempt });
   }
   return generateOpenAiProductImage({ image, prompt, sceneConfig, scene });
 }
@@ -1229,11 +1272,11 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
   throw lastError;
 }
 
-async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene }) {
+async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene, attempt = 1 }) {
   const config = ideogramModelConfig(IDEOGRAM_IMAGE_MODEL);
   const imageBlob = await imageInputToBlob(image);
   const form = new FormData();
-  const imageWeight = isRequiredLifestyleScene(scene) ? "42" : "70";
+  const imageWeight = isRequiredLifestyleScene(scene) ? (attempt > 1 ? "22" : "30") : "70";
   if (config.family === "v4") {
     form.append("image", imageBlob, "product.png");
     form.append("text_prompt", prompt);
@@ -1312,6 +1355,46 @@ function batchFailureMessages(items) {
     }
     return reasons ? [String(reasons)] : [];
   }).filter(Boolean);
+}
+
+async function validateGeneratedLifestyleResult(result, scene) {
+  if (!isRequiredLifestyleScene(scene) || !sharp || !result?.image) return;
+  const relativePath = String(result.image).replace(/^\/+/, "");
+  const filePath = path.join(ROOT, relativePath);
+  const { data, info } = await sharp(filePath)
+    .resize(80, 120, { fit: "fill" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let overallPlain = 0;
+  let topPlain = 0;
+  const topRows = Math.round(info.height * 0.48);
+  const totalPixels = info.width * info.height;
+  const topPixels = info.width * topRows;
+
+  for (let index = 0; index < totalPixels; index += 1) {
+    const offset = index * info.channels;
+    const r = data[offset];
+    const g = data[offset + 1];
+    const b = data[offset + 2];
+    const avg = (r + g + b) / 3;
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+    const isPlainLight = (avg > 218 && chroma < 24) || avg > 242;
+    if (isPlainLight) {
+      overallPlain += 1;
+      if (index < topPixels) topPlain += 1;
+    }
+  }
+
+  const overallPlainRatio = overallPlain / totalPixels;
+  const topPlainRatio = topPlain / topPixels;
+  if (overallPlainRatio > 0.68 || topPlainRatio > 0.86) {
+    const error = new Error("AI returned a plain catalog-style background instead of a lifestyle room. Retrying with stronger room instructions.");
+    error.retryLifestyle = true;
+    error.generatedImagePath = filePath;
+    throw error;
+  }
 }
 
 async function saveGeneratedPortrait(imageBuffer, label, scene) {
