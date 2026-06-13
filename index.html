@@ -758,12 +758,36 @@
                   <label>
                     Image model
                     <select id="ideogramImageModel">
-                      <option value="ideogram-edit" selected>Ideogram Edit · Reference image</option>
+                      <optgroup label="Ideogram 4.0">
+                        <option value="ideogram-v4-turbo">4.0 Turbo · $0.03/image</option>
+                        <option value="ideogram-v4-default" selected>4.0 Default · $0.06/image</option>
+                        <option value="ideogram-v4-quality">4.0 Quality · $0.10/image</option>
+                      </optgroup>
+                      <optgroup label="Ideogram 3.0">
+                        <option value="ideogram-v3-flash">3.0 Flash · $0.03/image</option>
+                        <option value="ideogram-v3-turbo">3.0 Turbo · $0.03/image</option>
+                        <option value="ideogram-v3-default">3.0 Default · $0.06/image</option>
+                        <option value="ideogram-v3-quality">3.0 Quality · $0.09/image</option>
+                        <option value="ideogram-v3-character-turbo">3.0 Turbo + Character Reference · $0.10/image</option>
+                        <option value="ideogram-v3-character-default">3.0 Default + Character Reference · $0.15/image</option>
+                        <option value="ideogram-v3-character-quality">3.0 Quality + Character Reference · $0.20/image</option>
+                      </optgroup>
+                      <optgroup label="Ideogram 2.0 / 2a / 1.0">
+                        <option value="ideogram-v2-turbo">2.0 Turbo · $0.05/image</option>
+                        <option value="ideogram-v2-default">2.0 Default · $0.08/image</option>
+                        <option value="ideogram-v2a-turbo">2a Turbo · $0.025/image</option>
+                        <option value="ideogram-v2a-default">2a Default · $0.04/image</option>
+                        <option value="ideogram-v1-turbo">1.0 Turbo · $0.02/image</option>
+                        <option value="ideogram-v1-default">1.0 Default · $0.06/image</option>
+                      </optgroup>
+                      <optgroup label="Edit endpoint">
+                        <option value="ideogram-edit">Instructional Edit · $0.20/image</option>
+                      </optgroup>
                     </select>
                   </label>
                   <div class="marketplace-note">
-                    <strong>Reference image edit</strong>
-                    <span>Uses the uploaded product image with a native 2:3 portrait request, then normalizes the result to 1200 × 1800 px.</span>
+                    <strong>Reference image generation</strong>
+                    <span>Uses the uploaded product image with Ideogram remix/edit, then normalizes the result to 1200 × 1800 px.</span>
                   </div>
                   <a class="ghost-btn link-btn" href="https://ideogram.ai/manage-api" target="_blank" rel="noreferrer">
                     <span data-lucide="key-round"></span>

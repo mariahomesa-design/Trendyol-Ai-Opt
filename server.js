@@ -29,7 +29,7 @@ let GOOGLE_API_KEY = sanitizeApiKey(process.env.GEMINI_API_KEY || process.env.GO
 let GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 let GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-3-pro-image-preview";
 let IDEOGRAM_API_KEY = sanitizeApiKey(process.env.IDEOGRAM_API_KEY || "");
-let IDEOGRAM_IMAGE_MODEL = process.env.IDEOGRAM_IMAGE_MODEL || "ideogram-edit";
+let IDEOGRAM_IMAGE_MODEL = process.env.IDEOGRAM_IMAGE_MODEL || "ideogram-v4-default";
 let AI_ANALYSIS_PROVIDER = process.env.AI_ANALYSIS_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 let AI_IMAGE_PROVIDER = process.env.AI_IMAGE_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 const GENERATED_DIR = path.join(ROOT, "generated");
@@ -159,6 +159,120 @@ function providerLabel(provider) {
   if (provider === "google") return "Google Gemini";
   if (provider === "ideogram") return "Ideogram";
   return "OpenAI";
+}
+
+const IDEOGRAM_MODEL_OPTIONS = {
+  "ideogram-v4-turbo": {
+    label: "Ideogram 4.0 Turbo",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v4/remix",
+    family: "v4",
+    renderingSpeed: "TURBO",
+    resolution: "1664x2496"
+  },
+  "ideogram-v4-default": {
+    label: "Ideogram 4.0 Default",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v4/remix",
+    family: "v4",
+    renderingSpeed: "DEFAULT",
+    resolution: "1664x2496"
+  },
+  "ideogram-v4-quality": {
+    label: "Ideogram 4.0 Quality",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v4/remix",
+    family: "v4",
+    renderingSpeed: "QUALITY",
+    resolution: "1664x2496"
+  },
+  "ideogram-v3-flash": {
+    label: "Ideogram 3.0 Flash",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "FLASH"
+  },
+  "ideogram-v3-turbo": {
+    label: "Ideogram 3.0 Turbo",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "TURBO"
+  },
+  "ideogram-v3-default": {
+    label: "Ideogram 3.0 Default",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "DEFAULT"
+  },
+  "ideogram-v3-quality": {
+    label: "Ideogram 3.0 Quality",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "QUALITY"
+  },
+  "ideogram-v3-character-turbo": {
+    label: "Ideogram 3.0 Turbo with Character Reference",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "TURBO",
+    characterReference: true
+  },
+  "ideogram-v3-character-default": {
+    label: "Ideogram 3.0 Default with Character Reference",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "DEFAULT",
+    characterReference: true
+  },
+  "ideogram-v3-character-quality": {
+    label: "Ideogram 3.0 Quality with Character Reference",
+    endpoint: "https://api.ideogram.ai/v1/ideogram-v3/remix",
+    family: "v3",
+    renderingSpeed: "QUALITY",
+    characterReference: true
+  },
+  "ideogram-v2-turbo": {
+    label: "Ideogram 2.0 Turbo",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_2_TURBO"
+  },
+  "ideogram-v2-default": {
+    label: "Ideogram 2.0 Default",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_2"
+  },
+  "ideogram-v2a-turbo": {
+    label: "Ideogram 2a Turbo",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_2A_TURBO"
+  },
+  "ideogram-v2a-default": {
+    label: "Ideogram 2a Default",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_2A"
+  },
+  "ideogram-v1-turbo": {
+    label: "Ideogram 1.0 Turbo",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_1_TURBO"
+  },
+  "ideogram-v1-default": {
+    label: "Ideogram 1.0 Default",
+    endpoint: "https://api.ideogram.ai/remix",
+    family: "legacy",
+    model: "V_1"
+  },
+  "ideogram-edit": {
+    label: "Ideogram Instructional Edit",
+    endpoint: "https://api.ideogram.ai/v1/edit",
+    family: "edit"
+  }
+};
+
+function ideogramModelConfig(model) {
+  return IDEOGRAM_MODEL_OPTIONS[model] || IDEOGRAM_MODEL_OPTIONS["ideogram-v4-default"];
 }
 
 async function requestJson(req) {
@@ -1077,14 +1191,49 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
 }
 
 async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene }) {
+  const config = ideogramModelConfig(IDEOGRAM_IMAGE_MODEL);
+  const imageBlob = await imageInputToBlob(image);
   const form = new FormData();
-  form.append("images", await imageInputToBlob(image), "product.png");
-  form.append("prompt", prompt);
-  form.append("num_images", "1");
-  form.append("aspect_ratio", "2x3");
-  form.append("magic_prompt", "OFF");
-  form.append("transparent_background", "false");
-  const response = await fetch("https://api.ideogram.ai/v1/edit", {
+  if (config.family === "v4") {
+    form.append("image", imageBlob, "product.png");
+    form.append("text_prompt", prompt);
+    form.append("image_weight", "70");
+    form.append("resolution", config.resolution || "1664x2496");
+    form.append("rendering_speed", config.renderingSpeed || "DEFAULT");
+  } else if (config.family === "v3") {
+    form.append("image", imageBlob, "product.png");
+    form.append("prompt", prompt);
+    form.append("num_images", "1");
+    form.append("aspect_ratio", "2x3");
+    form.append("image_weight", "70");
+    form.append("rendering_speed", config.renderingSpeed || "DEFAULT");
+    form.append("magic_prompt", "OFF");
+    form.append("style_type", "REALISTIC");
+    if (config.characterReference) {
+      form.append("character_reference_images", imageBlob, "product-character.png");
+    }
+  } else if (config.family === "legacy") {
+    const request = {
+      prompt,
+      aspect_ratio: "ASPECT_2_3",
+      image_weight: 70,
+      magic_prompt_option: "OFF",
+      model: config.model || "V_2"
+    };
+    if (!/^V_1/.test(request.model)) {
+      request.style_type = "REALISTIC";
+    }
+    form.append("image_request", JSON.stringify(request));
+    form.append("image_file", imageBlob, "product.png");
+  } else {
+    form.append("images", imageBlob, "product.png");
+    form.append("prompt", prompt);
+    form.append("num_images", "1");
+    form.append("aspect_ratio", "2x3");
+    form.append("magic_prompt", "OFF");
+    form.append("transparent_background", "false");
+  }
+  const response = await fetch(config.endpoint, {
     method: "POST",
     headers: { "Api-Key": safeHeaderValue(providerKey("ideogram")) },
     body: form
@@ -1105,7 +1254,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
   if (!imageResponse.ok) throw new Error("Could not download the generated Ideogram image.");
   return {
     ...await saveGeneratedPortrait(Buffer.from(await imageResponse.arrayBuffer()), sceneConfig.label, scene),
-    modelUsed: IDEOGRAM_IMAGE_MODEL || "ideogram-edit",
+    modelUsed: config.label || IDEOGRAM_IMAGE_MODEL || "Ideogram",
     usedFallback: false
   };
 }

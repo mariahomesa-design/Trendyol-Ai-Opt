@@ -440,7 +440,7 @@ function readAiSettingsForm() {
     geminiModel: $("#geminiModel").value.trim() || "gemini-2.5-flash",
     geminiImageModel: $("#geminiImageModel").value.trim() || "gemini-3-pro-image-preview",
     ideogramApiKey: $("#ideogramApiKey").value.trim(),
-    ideogramImageModel: $("#ideogramImageModel")?.value || "ideogram-edit"
+    ideogramImageModel: $("#ideogramImageModel")?.value || "ideogram-v4-default"
   };
 }
 
@@ -678,7 +678,7 @@ function modelCostLine(provider, model, type) {
     return `${model || "OpenAI"} uses OpenAI vision/text tokens for each product photo analysis.`;
   }
   if (provider === "google") return `${model || "Gemini image"} uses one image-generation request per created image.`;
-  if (provider === "ideogram") return `${model || "Ideogram Edit"} uses one Ideogram image edit credit per created image.`;
+  if (provider === "ideogram") return `${displayImageModel(model || "ideogram-v4-default")} uses the selected Ideogram tier per created image. Final files are normalized to 1200 × 1800 px.`;
   return `${model || "OpenAI image"} uses one OpenAI image-generation request per created image.`;
 }
 
@@ -3370,7 +3370,23 @@ function displayImageModel(model) {
     "gemini-3.1-flash-image-preview": "Gemini Flash",
     "gemini-2.5-flash-image": "Gemini 2.5 Flash",
     "gpt-image-2": "OpenAI GPT Image 2",
-    "ideogram-edit": "Ideogram Edit"
+    "ideogram-v4-turbo": "Ideogram 4.0 Turbo",
+    "ideogram-v4-default": "Ideogram 4.0 Default",
+    "ideogram-v4-quality": "Ideogram 4.0 Quality",
+    "ideogram-v3-flash": "Ideogram 3.0 Flash",
+    "ideogram-v3-turbo": "Ideogram 3.0 Turbo",
+    "ideogram-v3-default": "Ideogram 3.0 Default",
+    "ideogram-v3-quality": "Ideogram 3.0 Quality",
+    "ideogram-v3-character-turbo": "Ideogram 3.0 Turbo + Character Reference",
+    "ideogram-v3-character-default": "Ideogram 3.0 Default + Character Reference",
+    "ideogram-v3-character-quality": "Ideogram 3.0 Quality + Character Reference",
+    "ideogram-v2-turbo": "Ideogram 2.0 Turbo",
+    "ideogram-v2-default": "Ideogram 2.0 Default",
+    "ideogram-v2a-turbo": "Ideogram 2a Turbo",
+    "ideogram-v2a-default": "Ideogram 2a Default",
+    "ideogram-v1-turbo": "Ideogram 1.0 Turbo",
+    "ideogram-v1-default": "Ideogram 1.0 Default",
+    "ideogram-edit": "Ideogram Instructional Edit"
   };
   return labels[model] || model;
 }
