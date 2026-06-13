@@ -2843,7 +2843,7 @@ function isVaseImageProfile() {
 }
 
 function getRequiredProductImageScenes() {
-  return ["hero", "lifestyle", "elevated", "features", "size", "white"];
+  return ["hero", "lifestyle", "white"];
 }
 
 async function generateNewProductImages() {
@@ -2866,6 +2866,10 @@ async function generateNewProductImages() {
     return;
   }
   const scenes = getRequiredProductImageScenes();
+  if (state.generatedProductImages.some((item) => !scenes.includes(item.scene))) {
+    state.generatedProductImages = state.generatedProductImages.filter((item) => scenes.includes(item.scene));
+    renderGeneratedProductImages();
+  }
   const totalImages = scenes.length;
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
@@ -2898,6 +2902,7 @@ async function generateNewProductImages() {
 }
 
 async function createGeneratedImage(scene, customPrompt = "") {
+  const isWhiteBackgroundScene = scene === "white";
   const generated = await apiFetch("/api/generate-product-image", {
     method: "POST",
     body: JSON.stringify({
@@ -2907,9 +2912,11 @@ async function createGeneratedImage(scene, customPrompt = "") {
       scene,
       customPrompt: [
         customPrompt,
-        state.sellerLogoData
+        state.sellerLogoData && !isWhiteBackgroundScene
           ? `Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} corner for the seller logo. Do not invent or redraw a logo; the app will place the exact transparent logo afterward.`
-          : ""
+          : isWhiteBackgroundScene
+            ? "This is the final white-background marketplace image. Do not add any logo, text, props or lifestyle background."
+            : ""
       ].filter(Boolean).join(" ")
     })
   });

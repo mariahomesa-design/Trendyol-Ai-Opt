@@ -1015,11 +1015,11 @@ const PRODUCT_IMAGE_SCENES = {
   },
   hero: {
     label: "Hero lifestyle image",
-    prompt: "Create image 1: a premium lifestyle hero photograph. Place the exact reference product naturally in the correct upscale Saudi room for its category. Use the quality and angle of a high-end furniture brand: best clear view, realistic scale, warm daylight, bright clean room, editorial composition, crisp material detail and accurate contact shadows. The full product must be visible and unchanged. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    prompt: "Create image 1 of exactly 3: a lifestyle image showing the exact uploaded item in a natural setting. The product must be full, clear, sharp, realistically placed, and not cropped. Preserve the same item exactly: shape, color, material, pattern, legs, handles, frame, proportions and all visible details. Use a premium furniture-brand lifestyle scene with natural lighting and realistic shadows. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   lifestyle: {
     label: "Lifestyle image",
-    prompt: "Create image 2: a second premium lifestyle photograph in the same room family as image 1. If the product is naturally sold or displayed as a set, such as dining chairs, bar stools, small decor pairs or modular seating, show a realistic saleable group in the same room. If the product is a single item such as a console, TV table, cabinet, sofa, bed, mirror, vase, coffee table or wall art, keep one exact item and place it somewhere else in the correct room from a different professional angle. Never add unrelated duplicate products. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    prompt: "Create image 2 of exactly 3: another lifestyle image from a different angle. If the item is part of a set or naturally sold as multiples, such as dining chairs, bar stools, paired decor or a modular group, show the set clearly and realistically. If it is not a set, show only the same single item from another natural angle or position in the correct room. The product must remain full, clear, accurate and not cropped. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   elevated: {
     label: "Elevated room angle",
@@ -1037,7 +1037,7 @@ const PRODUCT_IMAGE_SCENES = {
   },
   white: {
     label: "Pure white background image",
-    prompt: "Create image 6: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and absolutely no logo."
+    prompt: "Create image 3 of exactly 3: a pure white-background marketplace image. Show the entire exact item perfectly, fully visible, centered, sharp and uncropped. Use a clean seamless white background with only a subtle realistic contact shadow. Preserve accurate color, material, pattern, texture, proportions and construction details. No props, no lifestyle room, no text, no people and absolutely no logo."
   }
 };
 
@@ -1066,6 +1066,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
     "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
+    "For new listing generation, only three final image types are allowed: image 1 lifestyle, image 2 second lifestyle angle or set when appropriate, image 3 pure white background. Do not create feature images, dimension images, description images, close-up images or extra benefit images unless the scene explicitly asks for them.",
     ["hero", "features", "detail", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
