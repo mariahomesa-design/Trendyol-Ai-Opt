@@ -901,33 +901,29 @@ const PRODUCT_IMAGE_SCENES = {
   },
   hero: {
     label: "Hero lifestyle image",
-    prompt: "Create image 1: a premium lifestyle hero photograph. The first image must be lifestyle, not a plain studio cutout. Place the exact reference product naturally in the correct upscale Saudi room for its category. The full product must be visible, centered as the hero, with realistic scale, editorial furniture photography, soft daylight, accurate contact shadows, detailed materials, restrained styling and clean corner space for the seller logo. No people, no text, no extra logos."
+    prompt: "Create image 1: a premium lifestyle hero photograph. Place the exact reference product naturally in the correct upscale Saudi room for its category. Use the quality and angle of a high-end furniture brand: best clear view, realistic scale, warm daylight, bright clean room, editorial composition, crisp material detail and accurate contact shadows. The full product must be visible and unchanged. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   lifestyle: {
     label: "Lifestyle image",
-    prompt: "Create image 2: another premium lifestyle photograph without humans. Place the exact reference product in a different realistic composition that fits the product category and Saudi marketplace taste. For dining chairs or bar stools, show a realistic saleable set only when appropriate. For tables, cabinets, beds, mirrors, wall art and single furniture pieces, show one product only. Never add mirrored copies, background duplicates or unrelated matching items. Use luxury furniture-brand commercial photography, accurate lens perspective, crisp product detail, realistic lighting, natural shadows, no text and clean corner space for the seller logo."
+    prompt: "Create image 2: a second premium lifestyle photograph in the same room family as image 1. If the product is naturally sold or displayed as a set, such as dining chairs, bar stools, small decor pairs or modular seating, show a realistic saleable group in the same room. If the product is a single item such as a console, TV table, cabinet, sofa, bed, mirror, vase, coffee table or wall art, keep one exact item and place it somewhere else in the correct room from a different professional angle. Never add unrelated duplicate products. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+  },
+  elevated: {
+    label: "Elevated room angle",
+    prompt: "Create image 3: a premium lifestyle photograph captured from above or a higher corner angle, like a professional photographer standing above the room. Keep the same exact reference product in the same room style as images 1 and 2, with bright natural light, clean decor, correct scale, visible product details and a realistic full-room feeling. The product must remain accurate, sharp and not redesigned. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   features: {
     label: "Bilingual features image",
-    prompt: "Create image 3: a premium lifestyle feature image without humans. Keep the exact reference product large, sharp and unchanged in a clean bright interior or studio-lifestyle background. Leave generous uncluttered space around the product for the app to add bilingual English and Arabic feature labels. Do not render words, letters, arrows, badges, measurements or extra logos yourself. Keep clean corner space for the seller logo.",
-    geminiPrompt: "Create image 3: a clean premium lifestyle product feature background. Keep the exact reference product large, sharp and unchanged against a bright minimal interior or studio-lifestyle background. Leave generous uncluttered space around the product for feature labels. Do not render any words, letters, arrows, badges, logos or measurements; the app adds accurate typography afterward."
+    prompt: "Create image 4: a feature/description base image in a premium Amazon-style furniture infographic layout. Keep the exact product large and clear in a beautiful lifestyle setting on the left/top area. Leave clean space on the right side and lower section for the app to add Arabic and English feature text, icons and small detail cards. The image should feel like a luxury product description graphic, not a simple bottom table. Do not render any words, letters, icons, arrows, badges, measurements or extra logos yourself; the app adds the typography afterward. Keep clean corner space for the seller logo.",
+    geminiPrompt: "Create image 4: premium furniture feature infographic base. Exact product large and sharp in lifestyle setting on left/top, clean right side and lower section for app-added Arabic/English feature text, icons and cards. Do not render words, letters, icons, arrows, badges, logos or measurements."
   },
   size: {
     label: "Dimensions image",
-    prompt: "Create image 4: a high-end catalog dimensions image with multiple consistent views of the exact same reference product, such as front, side, three-quarter and rear or top as appropriate. Keep every view identical in color, material, pattern and construction, with balanced spacing and no overlap. Do not render words, arrows, measurements or logos; the app will add simple average cm values afterward.",
-    geminiPrompt: "Create image 4: a high-end catalog dimensions image with multiple consistent views of the exact same reference product: front, side, three-quarter and rear or top as appropriate. Use bright clean lighting, identical color and construction in every view, balanced spacing and no overlap. Do not render any words, letters, logos, arrows or measurements."
-  },
-  detail: {
-    label: "Material detail image",
-    prompt: "Create image 5: a premium close-up detail photograph of the exact reference product. Focus on the category's most important material or construction detail such as fabric weave, wood grain, marble surface, frame edge, headboard, handle, texture, stitching or finish. The detail must look realistic, sharp and luxury brand quality. No humans, no text, no extra logos, and clean corner space for the seller logo."
-  },
-  benefits: {
-    label: "Usage benefits image",
-    prompt: "Create image 6: a premium benefit image for the exact reference product. Show the category's main commercial benefit, such as seating capacity, comfort, storage capacity, room enhancement, styling inspiration or daily usage. Keep the product realistic, fully understandable, elegant and no humans. No text, no extra logos, and clean corner space for the seller logo."
+    prompt: "Create image 5: a premium product dimensions base image like a clean furniture catalog. Show the exact product on a white or very light grey background with one large main view and, when helpful, one smaller detail or storage/inside view. Leave clear blank areas above and around the product for the app to add measurement arrows, cm labels and kg load labels. Do not render any words, numbers, inch marks, lbs, kg, arrows, measurement lines, logos or badges yourself. Keep the product color, material and proportions accurate and sharp.",
+    geminiPrompt: "Create image 5: clean furniture dimensions base on white/light grey background, exact product large and sharp with optional small detail view. Leave blank space for app-added measurement arrows, cm labels and kg load labels. Do not render text, numbers, inches, lbs, kg, arrows, logos or measurement lines."
   },
   white: {
     label: "Pure white background image",
-    prompt: "Create image 7: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and no logo."
+    prompt: "Create image 6: a premium Saudi marketplace catalog photograph of the exact reference product centered on a pure white seamless background. Show the complete product at a flattering three-quarter angle, with accurate color, pattern, texture, proportions and construction details, plus a subtle realistic contact shadow. No props, no text, no people and absolutely no logo."
   }
 };
 

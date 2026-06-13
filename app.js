@@ -2843,16 +2843,7 @@ function isVaseImageProfile() {
 }
 
 function getRequiredProductImageScenes() {
-  if (isDiningChairImageProfile()) {
-    return ["diningChairHero", "diningChairSet", "diningChairRoomAngle", "diningChairAlternateAngle", "white"];
-  }
-  if (isWallMirrorImageProfile()) {
-    return ["wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite"];
-  }
-  if (isVaseImageProfile()) {
-    return ["vaseHero", "vaseLifestyle", "vaseFeatures", "vaseSize", "vaseWhite"];
-  }
-  return ["hero", "lifestyle", "features", "size", "detail", "benefits", "white"];
+  return ["hero", "lifestyle", "elevated", "features", "size", "white"];
 }
 
 async function generateNewProductImages() {
@@ -2958,33 +2949,111 @@ function drawFeatureOverlay(context) {
   const entries = attributes.length ? attributes : [
     { attributeName: "Product detail", attributeNameAr: "تفاصيل المنتج", customAttributeValue: state.newProductAnalysis?.productType || "Product", customAttributeValueAr: "" }
   ];
-  const panelY = 1320;
-  context.fillStyle = "rgba(255, 255, 255, 0.96)";
-  context.fillRect(0, panelY, 1200, 480);
-  context.fillStyle = "#172033";
-  context.font = "700 42px Arial, sans-serif";
-  context.textAlign = "left";
-  context.fillText("Product features", 72, panelY + 72);
+  context.save();
+  context.fillStyle = "rgba(250, 247, 241, 0.96)";
+  context.fillRect(805, 410, 360, 520);
+  context.fillStyle = "#4b3829";
   context.textAlign = "right";
-  context.fillText("مميزات المنتج", 1128, panelY + 72);
+  context.font = "700 44px Arial, sans-serif";
+  context.fillText("مميزات المنتج", 1120, 475);
+  context.font = "500 25px Arial, sans-serif";
+  context.fillText("تفاصيل عملية لتجربة أفضل", 1120, 526);
 
-  const columnWidth = 510;
   entries.forEach((attribute, index) => {
-    const column = index % 2;
-    const row = Math.floor(index / 2);
-    const left = 72 + column * 560;
-    const top = panelY + 125 + row * 150;
-    context.fillStyle = "#f1f4f8";
-    context.fillRect(left, top, columnWidth, 126);
+    const top = 580 + index * 86;
+    const iconX = 850;
+    context.strokeStyle = "#8a7a68";
+    context.lineWidth = 2;
+    roundedRectPath(context, iconX - 24, top - 32, 56, 56, 8);
+    context.stroke();
+    context.fillStyle = "#172033";
+    context.textAlign = "right";
+    context.font = "700 21px Arial, sans-serif";
+    context.fillText(String(attribute.attributeNameAr || translateAttributeName(attribute.attributeName)).slice(0, 26), 1120, top - 8);
+    context.font = "400 17px Arial, sans-serif";
+    context.fillText(String(attribute.customAttributeValueAr || attribute.customAttributeValue || "").slice(0, 40), 1120, top + 20);
+  });
+
+  const panelY = 980;
+  context.fillStyle = "rgba(250, 247, 241, 0.98)";
+  context.fillRect(0, panelY, 1200, 700);
+  context.strokeStyle = "rgba(120, 96, 70, 0.55)";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(320, panelY + 62);
+  context.lineTo(880, panelY + 62);
+  context.stroke();
+  context.fillStyle = "#4b3829";
+  context.font = "700 32px Arial, sans-serif";
+  context.textAlign = "center";
+  context.fillText("Product details / تفاصيل المنتج", 600, panelY + 54);
+
+  const cardWidth = 255;
+  entries.forEach((attribute, index) => {
+    const left = 35 + index * 285;
+    const top = panelY + 105;
+    context.fillStyle = "rgba(255, 255, 255, 0.94)";
+    roundedRectPath(context, left, top, cardWidth, 300, 8);
+    context.fill();
+    context.fillStyle = "#5a4a3d";
+    roundedRectPath(context, left + 22, top + 182, cardWidth - 44, 46, 8);
+    context.fill();
+    context.fillStyle = "#ffffff";
+    context.font = "700 22px Arial, sans-serif";
+    context.textAlign = "center";
+    context.fillText(String(attribute.attributeNameAr || translateAttributeName(attribute.attributeName)).slice(0, 20), left + cardWidth / 2, top + 213);
+    context.fillStyle = "#172033";
+    context.font = "700 21px Arial, sans-serif";
+    context.fillText(String(attribute.attributeName || "Feature").slice(0, 22), left + cardWidth / 2, top + 252);
+    context.font = "400 17px Arial, sans-serif";
+    wrapCanvasText(context, String(attribute.customAttributeValue || "").slice(0, 60), left + 22, top + 282, cardWidth - 44, 22, 2, "center");
+  });
+
+  const footerY = panelY + 475;
+  const footerItems = [
+    ["High quality", "خامات عالية الجودة"],
+    ["Easy cleaning", "سهولة التنظيف"],
+    ["Ready to assemble", "سهل التركيب"],
+    ["Care guide", "تعليمات العناية"]
+  ];
+  context.fillStyle = "rgba(255, 255, 255, 0.88)";
+  roundedRectPath(context, 32, footerY, 1136, 112, 12);
+  context.fill();
+  footerItems.forEach((item, index) => {
+    const left = 76 + index * 280;
+    context.strokeStyle = "#6d6258";
+    context.lineWidth = 2;
+    context.beginPath();
+    context.arc(left, footerY + 55, 24, 0, Math.PI * 2);
+    context.stroke();
     context.fillStyle = "#172033";
     context.textAlign = "left";
-    context.font = "700 25px Arial, sans-serif";
-    context.fillText(String(attribute.attributeName || "Feature").slice(0, 32), left + 22, top + 36);
-    context.font = "400 22px Arial, sans-serif";
-    context.fillText(String(attribute.customAttributeValue || "").slice(0, 42), left + 22, top + 72);
-    context.textAlign = "right";
-    context.font = "600 22px Arial, sans-serif";
-    context.fillText(String(attribute.attributeNameAr || translateAttributeName(attribute.attributeName)).slice(0, 34), left + columnWidth - 22, top + 105);
+    context.font = "700 18px Arial, sans-serif";
+    context.fillText(item[0], left + 42, footerY + 45);
+    context.font = "500 15px Arial, sans-serif";
+    context.fillText(item[1], left + 42, footerY + 72);
+  });
+  context.restore();
+}
+
+function wrapCanvasText(context, text, x, y, maxWidth, lineHeight, maxLines = 2, align = "left") {
+  const words = String(text || "").split(/\s+/).filter(Boolean);
+  let line = "";
+  let lines = [];
+  words.forEach((word) => {
+    const testLine = line ? `${line} ${word}` : word;
+    if (context.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  });
+  if (line) lines.push(line);
+  lines.slice(0, maxLines).forEach((lineText, index) => {
+    const drawX = align === "center" ? x + maxWidth / 2 : x;
+    context.textAlign = align;
+    context.fillText(lineText, drawX, y + index * lineHeight);
   });
 }
 
@@ -3098,38 +3167,81 @@ function drawDimensionOverlay(context, scene = "size") {
     "Side view",
     "Back view"
   ];
-  const panelY = 1540;
-  context.fillStyle = "rgba(255, 255, 255, 0.97)";
-  context.fillRect(0, panelY, 1200, 260);
-  context.fillStyle = "#172033";
-  context.textAlign = "left";
-  context.font = "700 38px Arial, sans-serif";
-  context.fillText(dimensions.length ? "Average size" : "Multiple product angles", 64, panelY + 62);
-  context.textAlign = "right";
-  context.fillText(dimensions.length ? "المقاس التقريبي" : "زوايا متعددة", 1136, panelY + 62);
+  const [heightValue, widthValue, lengthValue] = displayValues;
+  context.save();
+  context.fillStyle = "#2d1f18";
+  context.textAlign = "center";
+  context.font = "500 58px Georgia, 'Times New Roman', serif";
+  context.fillText("Product Dimensions", 600, 135);
+  context.font = "500 32px Arial, sans-serif";
+  context.fillText("أبعاد المنتج", 600, 185);
+  context.strokeStyle = "rgba(45, 31, 24, 0.35)";
+  context.lineWidth = 2;
+  context.beginPath();
+  context.moveTo(515, 248);
+  context.lineTo(685, 248);
+  context.stroke();
 
-  displayValues.forEach((value, index) => {
-    const left = 64 + index * 365;
-    context.fillStyle = "#f1f4f8";
-    context.fillRect(left, panelY + 98, 320, 82);
-    context.fillStyle = "#172033";
-    context.textAlign = "center";
-    context.font = "700 34px Arial, sans-serif";
-    context.fillText(String(value).slice(0, 18), left + 160, panelY + 151);
-  });
+  drawMeasurementArrow(context, 185, 650, 1020, 620, String(lengthValue || "Length").slice(0, 18));
+  drawMeasurementArrow(context, 115, 660, 115, 1135, String(heightValue || "Height").slice(0, 18));
+  drawMeasurementArrow(context, 255, 1225, 675, 1225, String(widthValue || "Depth").slice(0, 18));
+
+  const weight = String($("#newDimensionalWeight")?.value || "").trim();
+  const loadText = weight ? `${weight.replace(/\s*kg$/i, "")} Kg` : "Kg";
+  context.fillStyle = "rgba(255, 255, 255, 0.9)";
+  roundedRectPath(context, 56, 1425, 520, 210, 24);
+  context.fill();
+  context.strokeStyle = "rgba(45, 31, 24, 0.25)";
+  context.stroke();
+  context.fillStyle = "#7a6b5e";
+  context.font = "700 30px Arial, sans-serif";
+  context.textAlign = "left";
+  context.fillText("Max. Load", 220, 1500);
+  context.fillText("التحمل التقريبي", 220, 1540);
+  context.fillStyle = "#172033";
+  context.font = "700 34px Arial, sans-serif";
+  context.fillText(loadText, 220, 1592);
 
   context.fillStyle = "#687387";
-  context.font = "400 22px Arial, sans-serif";
-  context.textAlign = "left";
-  const note = scene === "vaseSize"
-    ? "Size may vary by -2 cm / +2 cm."
-    : "Confirm exact measurements before publishing.";
-  const noteAr = scene === "vaseSize"
-    ? "قد يختلف المقاس بمقدار -2 سم / +2 سم"
-    : "يرجى تأكيد القياسات الدقيقة قبل النشر";
-  context.fillText(note, 64, panelY + 224);
-  context.textAlign = "right";
-  context.fillText(noteAr, 1136, panelY + 224);
+  context.font = "400 23px Arial, sans-serif";
+  context.textAlign = "center";
+  context.fillText("Size may vary by -2 cm / +2 cm. Confirm exact measurements before publishing.", 600, 1718);
+  context.fillText("قد يختلف المقاس بمقدار -2 سم / +2 سم. يرجى تأكيد القياسات الدقيقة قبل النشر", 600, 1760);
+  context.restore();
+}
+
+function drawMeasurementArrow(context, x1, y1, x2, y2, label) {
+  context.save();
+  context.strokeStyle = "#222222";
+  context.fillStyle = "#222222";
+  context.lineWidth = 3;
+  context.beginPath();
+  context.moveTo(x1, y1);
+  context.lineTo(x2, y2);
+  context.stroke();
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  drawArrowHead(context, x1, y1, angle + Math.PI);
+  drawArrowHead(context, x2, y2, angle);
+  context.font = "700 34px Arial, sans-serif";
+  context.textAlign = "center";
+  context.translate((x1 + x2) / 2, (y1 + y2) / 2 - 18);
+  const rotation = Math.abs(y2 - y1) > Math.abs(x2 - x1) ? -Math.PI / 2 : 0;
+  context.rotate(rotation);
+  context.lineWidth = 6;
+  context.strokeStyle = "rgba(255,255,255,0.85)";
+  context.strokeText(label, 0, 0);
+  context.fillText(label, 0, 0);
+  context.restore();
+}
+
+function drawArrowHead(context, x, y, angle) {
+  const size = 16;
+  context.beginPath();
+  context.moveTo(x, y);
+  context.lineTo(x - size * Math.cos(angle - Math.PI / 6), y - size * Math.sin(angle - Math.PI / 6));
+  context.lineTo(x - size * Math.cos(angle + Math.PI / 6), y - size * Math.sin(angle + Math.PI / 6));
+  context.closePath();
+  context.fill();
 }
 
 function translateAttributeName(name) {
