@@ -949,6 +949,33 @@ function imageGuideFor(productType, title) {
   };
 }
 
+function sceneLifestyleRules(scene, guideName) {
+  const categoryExamples = "Choose the correct real-use environment for the detected product: sofa in a living room, chair in its correct room, dining chair or dining table in a dining room, office chair in an office, bed in a bedroom, shoe cabinet or console in an entryway or living room, mirror on a wall above a console/vanity/sink, vase on a table or shelf, wall art on a styled wall.";
+  if (scene === "hero") {
+    return [
+      "HARD REQUIREMENT FOR IMAGE 1: this must be a lifestyle image, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
+      "Show the product as the hero item in a realistic premium environment that matches its category. The complete product must be fully visible from edge to edge, clear, sharp, correctly scaled and not cropped.",
+      "The room must complement the product and look like a professional furniture or home-decor brand photoshoot with natural daylight, realistic shadows, clean styling and premium materials.",
+      categoryExamples,
+      "Do not place the product alone on a plain white or grey studio background for image 1."
+    ].join(" ");
+  }
+  if (scene === "lifestyle") {
+    return [
+      "HARD REQUIREMENT FOR IMAGE 2: this must be a second lifestyle image in a realistic premium environment, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
+      "Use a different camera angle, product placement or composition from image 1 while keeping the same exact product identity and a matching premium environment.",
+      "If the item naturally belongs to a set, such as dining chairs, bar stools, paired side tables, paired decor or modular seating, show the set clearly and realistically. If it is not a set item, show the same single product from another perspective only.",
+      "The complete product or set must be fully visible, clear, sharp, correctly scaled and not cropped.",
+      categoryExamples,
+      "Do not place the product alone on a plain white or grey studio background for image 2."
+    ].join(" ");
+  }
+  if (scene === "white") {
+    return "HARD REQUIREMENT FOR IMAGE 3: this is the only white-background image. Show the full exact product only, centered, sharp, uncropped, with no room, no props, no logo, no text and no lifestyle environment.";
+  }
+  return `Use the most suitable professional marketplace composition for ${guideName || "this product"}.`;
+}
+
 const PRODUCT_IMAGE_SCENES = {
   diningChairHero: {
     label: "Dining chair hero",
@@ -1015,11 +1042,11 @@ const PRODUCT_IMAGE_SCENES = {
   },
   hero: {
     label: "Hero lifestyle image",
-    prompt: "Create image 1 of exactly 3: a lifestyle image showing the exact uploaded item in a natural setting. The product must be full, clear, sharp, realistically placed, and not cropped. Preserve the same item exactly: shape, color, material, pattern, legs, handles, frame, proportions and all visible details. Use a premium furniture-brand lifestyle scene with natural lighting and realistic shadows. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    prompt: "Create image 1 of exactly 3: a lifestyle image showing the exact uploaded item as the hero product in a realistic premium environment relevant to its category. The product must be fully visible from edge to edge, clear, sharp, correctly scaled, realistically placed, and not cropped. Preserve the same item exactly: shape, color, material, pattern, legs, handles, frame, proportions and all visible details. Use natural lighting, realistic shadows and professional furniture-brand composition. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   lifestyle: {
     label: "Lifestyle image",
-    prompt: "Create image 2 of exactly 3: another lifestyle image from a different angle. If the item is part of a set or naturally sold as multiples, such as dining chairs, bar stools, paired decor or a modular group, show the set clearly and realistically. If it is not a set, show only the same single item from another natural angle or position in the correct room. The product must remain full, clear, accurate and not cropped. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    prompt: "Create image 2 of exactly 3: a second lifestyle image from a different angle, room position or composition. If the item is part of a set or naturally sold as multiples, such as dining chairs, bar stools, paired decor or a modular group, show the set clearly and realistically. If it is not a set, show the same single item from another natural perspective in the correct real-use environment. The product must remain fully visible, clear, accurate, correctly scaled and not cropped. No people, no text, no extra logos. Leave a clean corner for the seller logo."
   },
   elevated: {
     label: "Elevated room angle",
@@ -1057,15 +1084,16 @@ async function generateProductImage({ image, productType, title, scene, customPr
   const prompt = [
     `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
+    sceneLifestyleRules(scene, guide.name),
     guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
     guide.name === "dining table" ? "Dining table approved style reference: make every dining table image look bright, airy and premium, like a luxury furniture-brand catalog shot in a Saudi dining room during daylight. Use white or warm neutral walls, large windows, light wood or marble tones, clean table styling, soft high-key exposure, crisp HD details and realistic shadows. Do not create dark interiors, brown-heavy rooms, dramatic low light, underexposed corners or gloomy contrast." : "",
-    guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: create a realistic premium home photoshoot series. The mirror must stay the same size, shape, frame color and thickness across all images. Lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home, above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. Detail and catalog images must be extra sharp and never blurry." : "",
-    guide.name === "decorative vase" ? "Decorative vase approved style reference: create a clear premium ecommerce photoshoot series. Lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. Feature images should show ribbed texture and minimalist design. Size and white-background images must be clean, bright and uncluttered." : "",
+    guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. The mirror must stay the same size, shape, frame color and thickness across all images. The white-background image must be extra sharp and never blurry." : "",
+    guide.name === "decorative vase" ? "Decorative vase approved style reference: lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. The white-background image must be clean, bright and uncluttered." : "",
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
-    "Do not duplicate the product unless the category guide says a set is appropriate or the dimensions image requires multiple consistent views.",
+    "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
     "For new listing generation, only three final image types are allowed: image 1 lifestyle, image 2 second lifestyle angle or set when appropriate, image 3 pure white background. Do not create feature images, dimension images, description images, close-up images or extra benefit images unless the scene explicitly asks for them.",
     ["hero", "features", "detail", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
