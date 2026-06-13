@@ -954,6 +954,7 @@ function sceneLifestyleRules(scene, guideName) {
   if (scene === "hero") {
     return [
       "HARD REQUIREMENT FOR IMAGE 1: this must be a lifestyle image, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
+      "Replace the source photo background with a complete realistic room. Do not keep the uploaded photo's original white, grey or plain background.",
       "Show the product as the hero item in a realistic premium environment that matches its category. The complete product must be fully visible from edge to edge, clear, sharp, correctly scaled and not cropped.",
       "The room must complement the product and look like a professional furniture or home-decor brand photoshoot with natural daylight, realistic shadows, clean styling and premium materials.",
       categoryExamples,
@@ -963,6 +964,7 @@ function sceneLifestyleRules(scene, guideName) {
   if (scene === "lifestyle") {
     return [
       "HARD REQUIREMENT FOR IMAGE 2: this must be a second lifestyle image in a realistic premium environment, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
+      "Replace the source photo background with a complete realistic room. Do not keep the uploaded photo's original white, grey or plain background.",
       "Use a different camera angle, product placement or composition from image 1 while keeping the same exact product identity and a matching premium environment.",
       "If the item naturally belongs to a set, such as dining chairs, bar stools, paired side tables, paired decor or modular seating, show the set clearly and realistically. If it is not a set item, show the same single product from another perspective only.",
       "The complete product or set must be fully visible, clear, sharp, correctly scaled and not cropped.",
@@ -974,6 +976,10 @@ function sceneLifestyleRules(scene, guideName) {
     return "HARD REQUIREMENT FOR IMAGE 3: this is the only white-background image. Show the full exact product only, centered, sharp, uncropped, with no room, no props, no logo, no text and no lifestyle environment.";
   }
   return `Use the most suitable professional marketplace composition for ${guideName || "this product"}.`;
+}
+
+function isRequiredLifestyleScene(scene) {
+  return scene === "hero" || scene === "lifestyle";
 }
 
 const PRODUCT_IMAGE_SCENES = {
@@ -1081,8 +1087,11 @@ async function generateProductImage({ image, productType, title, scene, customPr
     throw error;
   }
   const guide = imageGuideFor(productType, title);
+  const lifestyleScene = isRequiredLifestyleScene(scene);
   const prompt = [
-    `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
+    lifestyleScene
+      ? `Edit the uploaded reference into a professional lifestyle photograph of this exact ${productType || "product"} (${title || ""}). Preserve the product, but replace the plain/source background with a realistic furnished environment.`
+      : `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
     `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
     sceneLifestyleRules(scene, guide.name),
     guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
@@ -1092,6 +1101,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
+    lifestyleScene ? "For image 1 and image 2, the final output must visibly contain a realistic room/background with floor, wall, furniture/decor context and natural lighting. A plain white background means the result is wrong." : "",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
     "For new listing generation, only three final image types are allowed: image 1 lifestyle, image 2 second lifestyle angle or set when appropriate, image 3 pure white background. Do not create feature images, dimension images, description images, close-up images or extra benefit images unless the scene explicitly asks for them.",
@@ -1223,10 +1233,11 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
   const config = ideogramModelConfig(IDEOGRAM_IMAGE_MODEL);
   const imageBlob = await imageInputToBlob(image);
   const form = new FormData();
+  const imageWeight = isRequiredLifestyleScene(scene) ? "42" : "70";
   if (config.family === "v4") {
     form.append("image", imageBlob, "product.png");
     form.append("text_prompt", prompt);
-    form.append("image_weight", "70");
+    form.append("image_weight", imageWeight);
     form.append("resolution", config.resolution || "1664x2496");
     form.append("rendering_speed", config.renderingSpeed || "DEFAULT");
   } else if (config.family === "v3") {
@@ -1234,7 +1245,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
     form.append("prompt", prompt);
     form.append("num_images", "1");
     form.append("aspect_ratio", "2x3");
-    form.append("image_weight", "70");
+    form.append("image_weight", imageWeight);
     form.append("rendering_speed", config.renderingSpeed || "DEFAULT");
     form.append("magic_prompt", "OFF");
     form.append("style_type", "REALISTIC");
@@ -1245,7 +1256,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
     const request = {
       prompt,
       aspect_ratio: "ASPECT_2_3",
-      image_weight: 70,
+      image_weight: Number(imageWeight),
       magic_prompt_option: "OFF",
       model: config.model || "V_2"
     };
@@ -1261,6 +1272,7 @@ async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene 
     form.append("aspect_ratio", "2x3");
     form.append("magic_prompt", "OFF");
     form.append("transparent_background", "false");
+    form.append("image_weight", imageWeight);
   }
   const response = await fetch(config.endpoint, {
     method: "POST",
