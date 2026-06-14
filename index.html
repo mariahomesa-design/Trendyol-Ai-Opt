@@ -373,9 +373,17 @@
                   </button>
                 </div>
                 <label>
-                  Image direction (optional)
-                  <textarea id="imageCreativeDirection" rows="3" placeholder="Example: Use a warm modern Saudi living room with cream walls and natural daylight."></textarea>
+                  Number of images
+                  <select id="newProductImageCount">
+                    <option value="1">1 image</option>
+                    <option value="2">2 images</option>
+                    <option value="3" selected>3 images</option>
+                    <option value="4">4 images</option>
+                    <option value="5">5 images</option>
+                    <option value="6">6 images</option>
+                  </select>
                 </label>
+                <div class="custom-image-prompts" id="customImagePrompts"></div>
                 <section class="logo-settings" aria-labelledby="sellerLogoTitle">
                   <div class="logo-settings-heading">
                     <div>

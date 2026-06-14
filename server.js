@@ -1095,11 +1095,28 @@ async function generateProductImage({ image, productType, title, scene, customPr
     error.statusCode = 400;
     throw error;
   }
-  const sceneConfig = PRODUCT_IMAGE_SCENES[scene];
+  const customSceneMatch = String(scene || "").match(/^custom-([1-6])$/);
+  const sceneConfig = PRODUCT_IMAGE_SCENES[scene] || (customSceneMatch
+    ? { label: `Image ${customSceneMatch[1]}`, prompt: "" }
+    : null);
   if (!sceneConfig) {
     const error = new Error("Unknown product image scene.");
     error.statusCode = 400;
     throw error;
+  }
+  if (customSceneMatch && !String(customPrompt || "").trim()) {
+    const error = new Error(`Write a prompt for image ${customSceneMatch[1]} first.`);
+    error.statusCode = 400;
+    throw error;
+  }
+  if (customSceneMatch) {
+    return requestProductImageFromProvider({
+      image,
+      prompt: String(customPrompt || "").trim(),
+      sceneConfig,
+      scene,
+      attempt: 1
+    });
   }
   const guide = imageGuideFor(productType, title);
   const lifestyleScene = isRequiredLifestyleScene(scene);

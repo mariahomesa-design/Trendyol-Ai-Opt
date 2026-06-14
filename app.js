@@ -248,6 +248,7 @@ async function init() {
   loadOptimizationHistory();
   bindEvents();
   hydrateSettingsForms();
+  renderCustomImagePrompts();
   bindSessionActivity();
   await restoreTimedSession();
   await checkServerStatus();
@@ -301,6 +302,12 @@ function bindEvents() {
   $("#removeSellerLogoBtn").addEventListener("click", removeSellerLogo);
   $("#analyzeNewProductBtn").addEventListener("click", analyzeNewProduct);
   $("#generateImagesBtn").addEventListener("click", generateNewProductImages);
+  $("#newProductImageCount").addEventListener("change", () => {
+    syncGeneratedImagesToPromptCount();
+    renderCustomImagePrompts();
+    renderGeneratedProductImages();
+    renderListingReadiness();
+  });
   $("#newProductForm").addEventListener("submit", submitNewProduct);
   $("#checkProductBatchBtn").addEventListener("click", checkLatestProductBatch);
   $("#listAnotherProductBtn").addEventListener("click", resetNewProductForm);
@@ -2625,6 +2632,7 @@ function loadNewProductImage(event) {
     state.categoryAttributesPrepared = false;
     $("#newProductPreview").src = state.newProductImageData;
     $("#newProductPreview").classList.remove("hidden");
+    renderCustomImagePrompts();
     renderGeneratedProductImages();
     $("#createAiStatus").textContent = "Ready to analyze";
     $("#newProductWarning").classList.add("hidden");
@@ -2817,36 +2825,37 @@ async function analyzeNewProduct() {
   }
 }
 
-function newProductImageProfileText() {
-  return [
-    state.newProductAnalysis?.productType,
-    $("#newTitle")?.value,
-    $("#imageCreativeDirection")?.value
-  ].map((value) => String(value || "").toLowerCase()).join(" ");
-}
-
-function isDiningChairImageProfile() {
-  const text = newProductImageProfileText();
-  return /\b(dining|kitchen)\s+chairs?\b/.test(text)
-    || /\bchairs?\s+(for|with)\s+dining\b/.test(text)
-    || /كرسي\s*طعام|كراسي\s*طعام/.test(text);
-}
-
-function isWallMirrorImageProfile() {
-  const text = newProductImageProfileText();
-  return /\b(hanging|wall|round|bathroom|vanity|decorative)\s+mirrors?\b/.test(text)
-    || /\bmirrors?\s+(for|with|on)\s+(wall|bathroom|vanity|entryway|console)\b/.test(text)
-    || /مرآة\s*(جدارية|حائط)|مراية\s*(جدارية|حائط)/.test(text);
-}
-
-function isVaseImageProfile() {
-  const text = newProductImageProfileText();
-  return /\b(flower|ceramic|decorative|ribbed)?\s*vases?\b/.test(text)
-    || /مزهرية|فازة/.test(text);
-}
-
 function getRequiredProductImageScenes() {
-  return ["hero", "lifestyle", "white"];
+  return Array.from({ length: selectedProductImageCount() }, (_, index) => `custom-${index + 1}`);
+}
+
+function selectedProductImageCount() {
+  return Math.max(1, Math.min(6, Number($("#newProductImageCount")?.value || 3) || 3));
+}
+
+function syncGeneratedImagesToPromptCount() {
+  const scenes = new Set(getRequiredProductImageScenes());
+  state.generatedProductImages = state.generatedProductImages.filter((item) => scenes.has(item.scene));
+}
+
+function renderCustomImagePrompts() {
+  const wrap = $("#customImagePrompts");
+  if (!wrap) return;
+  const previous = new Map($$(".custom-image-prompt").map((input) => [input.dataset.scene, input.value]));
+  const scenes = getRequiredProductImageScenes();
+  wrap.innerHTML = scenes.map((scene, index) => `
+    <label class="custom-image-prompt-field">
+      Image ${index + 1} prompt
+      <textarea class="custom-image-prompt" data-scene="${scene}" rows="3" placeholder="Write exactly what AI should create for image ${index + 1}."></textarea>
+    </label>
+  `).join("");
+  $$(".custom-image-prompt").forEach((input) => {
+    input.value = previous.get(input.dataset.scene) || input.value;
+  });
+}
+
+function promptForImageScene(scene) {
+  return $(`.custom-image-prompt[data-scene="${scene}"]`)?.value.trim() || "";
 }
 
 async function generateNewProductImages() {
@@ -2860,37 +2869,34 @@ async function generateNewProductImages() {
   }
   const button = $("#generateImagesBtn");
   button.disabled = true;
-  const detectedType = displayValue(state.newProductAnalysis.productType).trim().toLowerCase();
-  const sellerDirection = $("#imageCreativeDirection").value.trim();
-  if ((!detectedType || ["product", "item", "object", "furniture"].includes(detectedType)) && sellerDirection.length < 12) {
-    button.disabled = false;
-    showToast("AI is not sure what this item is. Add the product type in Image direction, then generate images.");
-    $("#imageCreativeDirection").focus();
-    return;
-  }
   const scenes = getRequiredProductImageScenes();
-  if (state.generatedProductImages.some((item) => !scenes.includes(item.scene))) {
-    state.generatedProductImages = state.generatedProductImages.filter((item) => scenes.includes(item.scene));
-    renderGeneratedProductImages();
-  }
+  syncGeneratedImagesToPromptCount();
   const totalImages = scenes.length;
   const status = $("#imageGenerationStatus");
   status.classList.remove("hidden");
   refreshIcons();
-  let completed = state.generatedProductImages.filter((item) => scenes.includes(item.scene)).length;
+  let completed = state.generatedProductImages.length;
   for (const scene of scenes) {
     if (state.generatedProductImages.some((item) => item.scene === scene)) continue;
+    const prompt = promptForImageScene(scene);
+    if (!prompt) {
+      const imageNumber = scenes.indexOf(scene) + 1;
+      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Write a prompt for image ${imageNumber}, then click Continue image generation.</span>`;
+      showToast(`Write a prompt for image ${imageNumber} first.`);
+      $(`.custom-image-prompt[data-scene="${scene}"]`)?.focus();
+      break;
+    }
     button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of ${totalImages}`;
-    status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating the next image. You can review each image as it appears.</span>`;
+    status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating image ${scenes.indexOf(scene) + 1}. You can keep writing the next prompt while it works.</span>`;
     refreshIcons();
     try {
-      const result = await createGeneratedImage(scene, sellerDirection);
+      const result = await createGeneratedImage(scene, prompt);
       state.generatedProductImages.push(result);
       completed += 1;
       renderGeneratedProductImages();
       const fallbackNote = result.usedFallback ? " Pro was busy, so Gemini Flash completed this image." : "";
-      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(result.label)} was added to the listing.${fallbackNote}</span>`;
-      showToast(`${completed} of ${totalImages} created: ${result.label}${fallbackNote}`);
+      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Image ${completed} was added to the listing.${fallbackNote}</span>`;
+      showToast(`${completed} of ${totalImages} created${fallbackNote}`);
       renderListingReadiness();
     } catch (error) {
       status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
@@ -2905,7 +2911,6 @@ async function generateNewProductImages() {
 }
 
 async function createGeneratedImage(scene, customPrompt = "") {
-  const isWhiteBackgroundScene = scene === "white";
   const generated = await apiFetch("/api/generate-product-image", {
     method: "POST",
     body: JSON.stringify({
@@ -2913,14 +2918,9 @@ async function createGeneratedImage(scene, customPrompt = "") {
       productType: state.newProductAnalysis.productType,
       title: $("#newTitle").value,
       scene,
-      customPrompt: [
-        customPrompt,
-        state.sellerLogoData && !isWhiteBackgroundScene
-          ? `Reserve a clean ${state.sellerLogoPosition === "top-right" ? "top-right" : "top-left"} corner for the seller logo. Do not invent or redraw a logo; the app will place the exact transparent logo afterward.`
-          : isWhiteBackgroundScene
-            ? "This is the final white-background marketplace image. Do not add any logo, text, props or lifestyle background."
-            : ""
-      ].filter(Boolean).join(" ")
+      customPrompt,
+      sellerPromptOnly: true,
+      imageNumber: Number(scene.replace(/^custom-/, "")) || 1
     })
   });
   const polished = await applyListingImageOverlay(generated);
@@ -3282,7 +3282,7 @@ async function saveCanvasImage(canvas, scene) {
 }
 
 async function applySellerLogo(generated) {
-  if (!state.sellerLogoData || ["white", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite"].includes(generated.scene)) return generated;
+  if (!state.sellerLogoData || shouldSkipSellerLogo(generated.scene)) return generated;
   const sourceImage = generated.sourceImage || generated.image;
   const [productImage, logoImage] = await Promise.all([
     loadCanvasImage(sourceImage),
@@ -3313,6 +3313,10 @@ async function applySellerLogo(generated) {
   };
 }
 
+function shouldSkipSellerLogo(scene) {
+  return ["white", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite", `custom-${selectedProductImageCount()}`].includes(scene);
+}
+
 async function refreshGalleryBranding() {
   if (!state.generatedProductImages.length) return;
   if (!state.sellerLogoData) {
@@ -3334,6 +3338,7 @@ async function refreshGalleryBranding() {
 }
 
 function renderGeneratedProductImages() {
+  syncGeneratedImagesToPromptCount();
   const referenceCard = state.newProductImageData ? `
     <article class="generated-image-card reference">
       <button class="image-preview-button" type="button" data-image-src="${state.newProductImageData}" data-image-title="Uploaded reference">
@@ -3432,7 +3437,11 @@ function deleteGeneratedImage(scene) {
 async function regenerateGeneratedImage(button) {
   const scene = button.dataset.scene;
   const card = button.closest(".generated-image-card");
-  const customPrompt = card.querySelector(".image-edit-prompt").value.trim();
+  const customPrompt = card.querySelector(".image-edit-prompt").value.trim() || promptForImageScene(scene);
+  if (!customPrompt) {
+    showToast(`Write a prompt for ${scene.replace("custom-", "image ")} first.`);
+    return;
+  }
   button.disabled = true;
   button.innerHTML = `<span data-lucide="loader-circle"></span> Editing`;
   refreshIcons();
@@ -3603,6 +3612,7 @@ function renderRecentlyListedProducts() {
 function resetNewProductForm() {
   const savedBrandId = localStorage.getItem("trendlift-default-brand-id") || "";
   $("#newProductForm").reset();
+  $("#newProductImageCount").value = "3";
   $("#newBrandId").value = savedBrandId;
   $("#newQuantity").value = "1";
   $("#newVatRate").value = "15";
@@ -3627,6 +3637,7 @@ function resetNewProductForm() {
   $("#listAnotherProductBtn").classList.add("hidden");
   $("#imageGenerationStatus").classList.add("hidden");
   $("#newProductWarning").classList.add("hidden");
+  renderCustomImagePrompts();
   renderGeneratedProductImages();
   renderRequiredAttributeFields();
   renderListingReadiness();
