@@ -993,8 +993,23 @@ function sceneLifestyleRules(scene, guideName) {
   return `Use the most suitable professional marketplace composition for ${guideName || "this product"}.`;
 }
 
-function isRequiredLifestyleScene(scene) {
-  return scene === "hero" || scene === "lifestyle";
+function isCustomImageScene(scene) {
+  return /^custom-[1-6]$/.test(String(scene || ""));
+}
+
+function promptRequestsWhiteCatalog(prompt) {
+  return /\b(white\s+background|pure\s+white|plain\s+white|studio\s+background|catalog|catalogue|marketplace\s+image|product\s+only|no\s+room|without\s+room)\b/i.test(String(prompt || ""));
+}
+
+function promptRequestsLifestyle(prompt) {
+  const text = String(prompt || "");
+  if (promptRequestsWhiteCatalog(text)) return false;
+  return /\b(lifestyle|room|interior|environment|home|house|apartment|villa|office|living\s+room|dining\s+room|bedroom|entryway|hallway|kitchen|bathroom|natural\s+setting|realistic\s+setting|real\s+setting|background|decor|furniture\s+brand|photoshoot)\b/i.test(text);
+}
+
+function isRequiredLifestyleScene(scene, prompt = "") {
+  if (scene === "hero" || scene === "lifestyle") return true;
+  return isCustomImageScene(scene) && promptRequestsLifestyle(prompt);
 }
 
 const PRODUCT_IMAGE_SCENES = {
@@ -1110,13 +1125,30 @@ async function generateProductImage({ image, productType, title, scene, customPr
     throw error;
   }
   if (customSceneMatch) {
-    return requestProductImageFromProvider({
-      image,
-      prompt: String(customPrompt || "").trim(),
-      sceneConfig,
-      scene,
-      attempt: 1
-    });
+    const prompt = String(customPrompt || "").trim();
+    const lifestyleScene = isRequiredLifestyleScene(scene, prompt);
+    const maxAttempts = lifestyleScene ? 2 : 1;
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        const result = await requestProductImageFromProvider({
+          image,
+          prompt,
+          sceneConfig,
+          scene,
+          attempt
+        });
+        await validateGeneratedLifestyleResult(result, scene, prompt);
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (error.generatedImagePath) {
+          await fs.unlink(error.generatedImagePath).catch(() => {});
+        }
+        if (!lifestyleScene || attempt === maxAttempts || !error.retryLifestyle) throw error;
+      }
+    }
+    throw lastError || new Error("Image generation failed.");
   }
   const guide = imageGuideFor(productType, title);
   const lifestyleScene = isRequiredLifestyleScene(scene);
@@ -1290,11 +1322,17 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
   throw lastError;
 }
 
+function ideogramImageWeightFor(scene, prompt, attempt) {
+  if (isRequiredLifestyleScene(scene, prompt)) return attempt > 1 ? "18" : "28";
+  if (isCustomImageScene(scene)) return promptRequestsWhiteCatalog(prompt) ? "70" : "45";
+  return "70";
+}
+
 async function generateIdeogramProductImage({ image, prompt, sceneConfig, scene, attempt = 1 }) {
   const config = ideogramModelConfig(IDEOGRAM_IMAGE_MODEL);
   const imageBlob = await imageInputToBlob(image);
   const form = new FormData();
-  const imageWeight = isRequiredLifestyleScene(scene) ? (attempt > 1 ? "22" : "30") : "70";
+  const imageWeight = ideogramImageWeightFor(scene, prompt, attempt);
   if (config.family === "v4") {
     form.append("image", imageBlob, "product.png");
     form.append("text_prompt", prompt);
@@ -1375,8 +1413,8 @@ function batchFailureMessages(items) {
   }).filter(Boolean);
 }
 
-async function validateGeneratedLifestyleResult(result, scene) {
-  if (!isRequiredLifestyleScene(scene) || !sharp || !result?.image) return;
+async function validateGeneratedLifestyleResult(result, scene, prompt = "") {
+  if (!isRequiredLifestyleScene(scene, prompt) || !sharp || !result?.image) return;
   const relativePath = String(result.image).replace(/^\/+/, "");
   const filePath = path.join(ROOT, relativePath);
   const { data, info } = await sharp(filePath)
