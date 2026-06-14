@@ -208,7 +208,7 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const SESSION_STORAGE_KEY = "trendlift-timed-session";
 const CATEGORY_DIRECTORY_STORAGE_KEY = "trendlift-category-directory";
 const OPTIMIZATION_HISTORY_STORAGE_KEY = "trendlift-listing-optimization-history";
@@ -560,7 +560,7 @@ function clearTimedSession(showMessage = false) {
   $("#googleAiApiKey").value = "";
   $("#ideogramApiKey").value = "";
   if (showMessage) {
-    showToast("Session ended after 30 minutes of inactivity. Enter your APIs again to continue.");
+    showToast("Session ended after 1 day of inactivity. Enter your APIs again to continue.");
     setOperation("Session expired");
     render();
   }
@@ -648,7 +648,7 @@ async function restoreTimedSession() {
       state.mode = saved.mode || state.mode;
       state.connected = state.mode !== "none";
       state.lastSyncMessage = saved.lastSyncMessage || "";
-      setOperation(`Restored ${state.listings.length} listings from the 30-minute session cache`);
+      setOperation(`Restored ${state.listings.length} listings from the 1-day session cache`);
     }
     writeTimedSession();
   } catch {
@@ -2163,6 +2163,8 @@ async function generateImageForSelectedListing() {
         customPrompt: [
           customPrompt,
           "Create this as a professional Saudi marketplace product photo with the same quality expected in the Create Listing image workflow.",
+          "The result must be photorealistic and look like a real camera photograph. Do not create cartoon, illustration, CGI, 3D render, painting, sketch, poster or AI-art style output.",
+          "Use realistic room context, natural light, correct scale, accurate shadows and crisp material texture.",
           "Remove any logo, watermark, old seller mark, text overlay, badge or corner branding that already exists in the source image or generated background.",
           "Keep exactly one product only unless the request explicitly asks for a set.",
           state.sellerLogoData
@@ -2201,6 +2203,7 @@ async function saveSelectedListingImages() {
       method: "POST",
       body: JSON.stringify({
         source: listing.source || listing.metadata || {},
+        contentId: listing.metadata?.contentId || listing.source?.contentId || null,
         barcode: listing.barcode,
         title: listing.title,
         description: listing.description,

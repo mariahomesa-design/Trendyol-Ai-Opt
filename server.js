@@ -33,6 +33,7 @@ let IDEOGRAM_IMAGE_MODEL = process.env.IDEOGRAM_IMAGE_MODEL || "ideogram-v4-defa
 let AI_ANALYSIS_PROVIDER = process.env.AI_ANALYSIS_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 let AI_IMAGE_PROVIDER = process.env.AI_IMAGE_PROVIDER || (OPENAI_API_KEY ? "openai" : "google");
 const GENERATED_DIR = path.join(ROOT, "generated");
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -588,7 +589,7 @@ function categoryMatchScore(category, query) {
 async function fetchProductCategories(language = "en") {
   const cacheKey = `${session.environment}:${session.storeFrontCode || "SA"}:${language}`;
   const cached = categoryCache.get(cacheKey);
-  if (cached && Date.now() - cached.createdAt < 30 * 60 * 1000) return cached.categories;
+  if (cached && Date.now() - cached.createdAt < ONE_DAY_MS) return cached.categories;
   const body = await trendyolFetch("/integration/product/product-categories", {
     method: "GET",
     storeFrontCode: "SA",
@@ -814,6 +815,18 @@ const FURNITURE_IMAGE_GUIDES = [
     }
   },
   {
+    name: "shoe cabinet / storage",
+    match: ["shoe cabinet", "shoe rack", "storage cabinet", "cabinet", "wardrobe", "dresser", "خزانة", "جزامة", "تخزين"],
+    scenes: {
+      hero: "Entryway lifestyle hero with the storage or shoe cabinet fully visible and correctly placed.",
+      lifestyle: "Entryway lifestyle from another direction with realistic shoes or decor only as supporting context.",
+      features: "Feature image for doors, shelves, handles, ventilation, legs and finish.",
+      size: "Dimensions image with multiple cabinet angles and simple average cm values only.",
+      detail: "Material detail close-up showing wood grain, rattan, carving, handle or surface finish.",
+      benefits: "Storage capacity image showing organized shelves or compartments without clutter."
+    }
+  },
+  {
     name: "dining chair",
     match: ["dining chair", "dining chairs", "kitchen chair", "cane dining chair", "rattan dining chair", "كرسي طعام", "كراسي طعام"],
     scenes: {
@@ -904,18 +917,6 @@ const FURNITURE_IMAGE_GUIDES = [
       size: "Dimensions image with multiple bed angles and simple average cm values only.",
       detail: "Headboard detail close-up showing upholstery, stitching, wood or panel texture.",
       benefits: "Storage or comfort benefits image showing under-bed storage, support or comfort details when relevant."
-    }
-  },
-  {
-    name: "shoe cabinet / storage",
-    match: ["shoe cabinet", "shoe rack", "storage cabinet", "cabinet", "wardrobe", "dresser", "خزانة", "جزامة", "تخزين"],
-    scenes: {
-      hero: "Entryway lifestyle hero with the storage or shoe cabinet fully visible and correctly placed.",
-      lifestyle: "Entryway lifestyle from another direction with realistic shoes or decor only as supporting context.",
-      features: "Feature image for doors, shelves, handles, ventilation, legs and finish.",
-      size: "Dimensions image with multiple cabinet angles and simple average cm values only.",
-      detail: "Material detail close-up showing wood grain, rattan, carving, handle or surface finish.",
-      benefits: "Storage capacity image showing organized shelves or compartments without clutter."
     }
   },
   {
@@ -1058,7 +1059,7 @@ const PRODUCT_IMAGE_SCENES = {
   },
   optimizationRequested: {
     label: "Optimized listing image",
-    prompt: "Create a premium marketplace image for an existing listing using the seller's requested direction. Match the quality level of a professional furniture or home-decor brand photoshoot: realistic scale, crisp product detail, accurate material texture, natural lighting, clean composition, correct room context, and 1200 x 1800 portrait framing. Remove any existing logo, watermark, badge, text overlay, sticker, old brand mark or corner branding from the reference image and background. Leave one clean corner for the app to place the seller's uploaded logo afterward unless the seller asks for a pure white background. Do not invent a logo. Do not make a low-quality cutout, collage, render, duplicate product or blurry resized image."
+    prompt: "Create a premium photorealistic marketplace image for an existing listing using the seller's requested direction. It must look like a real professional furniture or home-decor brand photoshoot, not a cartoon, illustration, CGI render, 3D render, painting, collage or AI-art style image. Use realistic scale, crisp product detail, accurate material texture, natural lighting, clean composition, correct room context, realistic shadows, camera/lens perspective, and 1200 x 1800 portrait framing. Remove any existing logo, watermark, badge, text overlay, sticker, old brand mark or corner branding from the reference image and background. Leave one clean corner for the app to place the seller's uploaded logo afterward unless the seller asks for a pure white background. Do not invent a logo. Do not make a low-quality cutout, duplicate product, distorted product or blurry resized image."
   },
   hero: {
     label: "Hero lifestyle image",
@@ -2015,6 +2016,7 @@ async function handleApi(req, res, url) {
       const variant = source.variants?.[0] || source;
       const sourcePrice = variant.price || source.price || {};
       const sourceStock = variant.stock || source.stock || {};
+      const contentId = Number(source.contentId || source.metadata?.contentId || body.contentId);
       const images = (Array.isArray(body.images) ? body.images : [])
         .map((image) => String(image || "").trim())
         .filter((image) => /^https:\/\//i.test(image))
@@ -2023,6 +2025,33 @@ async function handleApi(req, res, url) {
         sendJson(res, 400, { ok: false, message: "At least one public HTTPS image is required." });
         return;
       }
+
+      if (contentId) {
+        const updateBody = {
+          items: [
+            {
+              contentId,
+              images: images.map((image) => ({ url: image }))
+            }
+          ]
+        };
+        const result = await trendyolFetch(`/integration/product/sellers/${session.sellerId}/products/content-bulk-update`, {
+          method: "POST",
+          storeFrontCode: session.storeFrontCode,
+          acceptLanguage: session.storeFrontCode ? "en" : undefined,
+          body: JSON.stringify(updateBody)
+        });
+        sendJson(res, 200, {
+          ok: true,
+          batchRequestId: result.batchRequestId || result.id || null,
+          raw: result,
+          message: result.batchRequestId
+            ? `Image order update submitted. Batch request ID: ${result.batchRequestId}`
+            : "Image order update submitted to Trendyol."
+        });
+        return;
+      }
+
       const item = {
         barcode: String(variant.barcode || source.barcode || body.barcode || "").trim(),
         title: String(source.title || body.title || "").trim().slice(0, 100),
