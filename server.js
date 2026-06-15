@@ -988,7 +988,7 @@ function sceneLifestyleRules(scene, guideName) {
     ].join(" ");
   }
   if (scene === "white") {
-    return "HARD REQUIREMENT FOR IMAGE 3: this is the only white-background image. Show the full exact product only, centered, sharp, uncropped, with no room, no props, no logo, no text and no lifestyle environment.";
+    return "HARD REQUIREMENT FOR IMAGE 4: this is the only white-background image. Show the full exact product only, centered, sharp, uncropped, with no room, no props, no logo, no text and no lifestyle environment.";
   }
   return `Use the most suitable professional marketplace composition for ${guideName || "this product"}.`;
 }
@@ -1077,12 +1077,16 @@ const PRODUCT_IMAGE_SCENES = {
     prompt: "Create a premium photorealistic marketplace image for an existing listing using the seller's requested direction. It must look like a real professional furniture or home-decor brand photoshoot, not a cartoon, illustration, CGI render, 3D render, painting, collage or AI-art style image. Use realistic scale, crisp product detail, accurate material texture, natural lighting, clean composition, correct room context, realistic shadows, camera/lens perspective, and 1200 x 1800 portrait framing. Remove any existing logo, watermark, badge, text overlay, sticker, old brand mark or corner branding from the reference image and background. Leave one clean corner for the app to place the seller's uploaded logo afterward unless the seller asks for a pure white background. Do not invent a logo. Do not make a low-quality cutout, duplicate product, distorted product or blurry resized image."
   },
   hero: {
-    label: "Hero lifestyle image",
-    prompt: "Create image 1 of exactly 3: a lifestyle image showing the exact uploaded item as the hero product in a realistic premium environment relevant to its category. The product must be fully visible from edge to edge, clear, sharp, correctly scaled, realistically placed, and not cropped. Preserve the same item exactly: shape, color, material, pattern, legs, handles, frame, proportions and all visible details. Use natural lighting, realistic shadows and professional furniture-brand composition. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    label: "Main lifestyle image",
+    prompt: "Create image 1 of exactly 4: a premium realistic lifestyle photograph showing the exact uploaded item as the main hero product in the natural place where this item is used. This policy applies to every product category, furniture or non-furniture. Build a clean bright premium environment around the product, like a marketplace main image photographed by a professional product photographer. The complete product must be fully visible, sharp, correctly scaled, realistically placed, and not cropped. Preserve the exact uploaded item: shape, color, material, texture, pattern, legs, handles, frame, hardware, proportions and all visible details. Use natural light, realistic shadows, clean interior styling, and high-end ecommerce composition. No humans, no text, no labels, no graphic lines, no extra logos. Do not use a white-background catalog setup for image 1."
   },
   lifestyle: {
-    label: "Lifestyle image",
-    prompt: "Create image 2 of exactly 3: a second lifestyle image from a different angle, room position or composition. If the item is part of a set or naturally sold as multiples, such as dining chairs, bar stools, paired decor or a modular group, show the set clearly and realistically. If it is not a set, show the same single item from another natural perspective in the correct real-use environment. The product must remain fully visible, clear, accurate, correctly scaled and not cropped. No people, no text, no extra logos. Leave a clean corner for the seller logo."
+    label: "Second lifestyle angle",
+    prompt: "Create image 2 of exactly 4: a second premium lifestyle photograph of the exact same uploaded item in the same type of area and same room style as image 1, but shot from another camera angle, a little farther away, covering more of the surrounding space and showing more supporting decor/items while keeping the uploaded product as the focus. If the product naturally belongs in a set, such as chairs, stools, paired decor or modular pieces, show the set clearly and realistically; otherwise show one product only from another perspective. The product must stay fully visible, sharp, accurate, correctly scaled and not cropped. No humans, no text, no labels, no graphic lines, no extra logos. Do not use a white-background catalog setup for image 2."
+  },
+  detailCollage: {
+    label: "Four close-up detail shots",
+    prompt: "Create image 3 of exactly 4: one vertical 1200 x 1800 image containing four realistic close-up product photography shots of the exact uploaded item. Use a clean two-by-two collage or four-panel composition, each panel showing a different detail such as material texture, edge, handle, leg, hinge, surface, stitching, opening, frame, cushion, base, or construction depending on the product. The close-ups must be sharp, premium, realistic, and faithful to the uploaded item. Do not add any text, labels, feature names, icons, arrows, badges, measurement lines, decorative color blocks, graphic overlays, or additional artificial colors. Do not add a logo. Keep backgrounds simple and natural so the product details are the focus."
   },
   elevated: {
     label: "Elevated room angle",
@@ -1100,7 +1104,7 @@ const PRODUCT_IMAGE_SCENES = {
   },
   white: {
     label: "Pure white background image",
-    prompt: "Create image 3 of exactly 3: a pure white-background marketplace image. Show the entire exact item perfectly, fully visible, centered, sharp and uncropped. Use a clean seamless white background with only a subtle realistic contact shadow. Preserve accurate color, material, pattern, texture, proportions and construction details. No props, no lifestyle room, no text, no people and absolutely no logo."
+    prompt: "Create image 4 of exactly 4: a pure white-background marketplace image. Show the entire exact uploaded item perfectly, fully visible, centered, sharp and uncropped. Use a clean seamless white background with only a subtle realistic contact shadow. Preserve accurate color, material, pattern, texture, proportions and construction details. No props, no lifestyle room, no text, no people and absolutely no logo."
   }
 };
 
@@ -1168,8 +1172,8 @@ async function generateProductImage({ image, productType, title, scene, customPr
     lifestyleScene ? "For image 1 and image 2, the final output must visibly contain a realistic room/background with floor, wall, furniture/decor context and natural lighting. A plain white background means the result is wrong." : "",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
-    "For new listing generation, only three final image types are allowed: image 1 lifestyle, image 2 second lifestyle angle or set when appropriate, image 3 pure white background. Do not create feature images, dimension images, description images, close-up images or extra benefit images unless the scene explicitly asks for them.",
-    ["hero", "features", "detail", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance. Count it before finishing: one product, not two." : "",
+    "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 four close-up detail shots in one image, image 4 pure white background. Do not create dimension images, text feature images or extra benefit cards unless the scene explicitly asks for them.",
+    ["hero", "features", "detail", "detailCollage", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance unless the scene explicitly asks for four close-up panels or a natural set. Count it before finishing and avoid accidental duplicated products." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
     "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",

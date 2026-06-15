@@ -248,7 +248,6 @@ async function init() {
   loadOptimizationHistory();
   bindEvents();
   hydrateSettingsForms();
-  renderCustomImagePrompts();
   bindSessionActivity();
   await restoreTimedSession();
   await checkServerStatus();
@@ -302,12 +301,6 @@ function bindEvents() {
   $("#removeSellerLogoBtn").addEventListener("click", removeSellerLogo);
   $("#analyzeNewProductBtn").addEventListener("click", analyzeNewProduct);
   $("#generateImagesBtn").addEventListener("click", generateNewProductImages);
-  $("#newProductImageCount").addEventListener("change", () => {
-    syncGeneratedImagesToPromptCount();
-    renderCustomImagePrompts();
-    renderGeneratedProductImages();
-    renderListingReadiness();
-  });
   $("#newProductForm").addEventListener("submit", submitNewProduct);
   $("#checkProductBatchBtn").addEventListener("click", checkLatestProductBatch);
   $("#listAnotherProductBtn").addEventListener("click", resetNewProductForm);
@@ -2632,7 +2625,6 @@ function loadNewProductImage(event) {
     state.categoryAttributesPrepared = false;
     $("#newProductPreview").src = state.newProductImageData;
     $("#newProductPreview").classList.remove("hidden");
-    renderCustomImagePrompts();
     renderGeneratedProductImages();
     $("#createAiStatus").textContent = "Ready to analyze";
     $("#newProductWarning").classList.add("hidden");
@@ -2826,36 +2818,12 @@ async function analyzeNewProduct() {
 }
 
 function getRequiredProductImageScenes() {
-  return Array.from({ length: selectedProductImageCount() }, (_, index) => `custom-${index + 1}`);
-}
-
-function selectedProductImageCount() {
-  return Math.max(1, Math.min(6, Number($("#newProductImageCount")?.value || 3) || 3));
+  return ["hero", "lifestyle", "detailCollage", "white"];
 }
 
 function syncGeneratedImagesToPromptCount() {
   const scenes = new Set(getRequiredProductImageScenes());
   state.generatedProductImages = state.generatedProductImages.filter((item) => scenes.has(item.scene));
-}
-
-function renderCustomImagePrompts() {
-  const wrap = $("#customImagePrompts");
-  if (!wrap) return;
-  const previous = new Map($$(".custom-image-prompt").map((input) => [input.dataset.scene, input.value]));
-  const scenes = getRequiredProductImageScenes();
-  wrap.innerHTML = scenes.map((scene, index) => `
-    <label class="custom-image-prompt-field">
-      Image ${index + 1} prompt
-      <textarea class="custom-image-prompt" data-scene="${scene}" rows="3" placeholder="Write exactly what AI should create for image ${index + 1}."></textarea>
-    </label>
-  `).join("");
-  $$(".custom-image-prompt").forEach((input) => {
-    input.value = previous.get(input.dataset.scene) || input.value;
-  });
-}
-
-function promptForImageScene(scene) {
-  return $(`.custom-image-prompt[data-scene="${scene}"]`)?.value.trim() || "";
 }
 
 async function generateNewProductImages() {
@@ -2878,25 +2846,17 @@ async function generateNewProductImages() {
   let completed = state.generatedProductImages.length;
   for (const scene of scenes) {
     if (state.generatedProductImages.some((item) => item.scene === scene)) continue;
-    const prompt = promptForImageScene(scene);
-    if (!prompt) {
-      const imageNumber = scenes.indexOf(scene) + 1;
-      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Write a prompt for image ${imageNumber}, then click Continue image generation.</span>`;
-      showToast(`Write a prompt for image ${imageNumber} first.`);
-      $(`.custom-image-prompt[data-scene="${scene}"]`)?.focus();
-      break;
-    }
     button.innerHTML = `<span data-lucide="loader-circle"></span> Creating ${completed + 1} of ${totalImages}`;
-    status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating image ${scenes.indexOf(scene) + 1}. You can keep writing the next prompt while it works.</span>`;
+    status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating ${listingImageSceneLabel(scene)}.</span>`;
     refreshIcons();
     try {
-      const result = await createGeneratedImage(scene, prompt);
+      const result = await createGeneratedImage(scene);
       state.generatedProductImages.push(result);
       completed += 1;
       renderGeneratedProductImages();
       const fallbackNote = result.usedFallback ? " Pro was busy, so Gemini Flash completed this image." : "";
-      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Image ${completed} was added to the listing.${fallbackNote}</span>`;
-      showToast(`${completed} of ${totalImages} created${fallbackNote}`);
+      status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(result.label || listingImageSceneLabel(scene))} was added to the listing.${fallbackNote}</span>`;
+      showToast(`${completed} of ${totalImages} created: ${result.label || listingImageSceneLabel(scene)}${fallbackNote}`);
       renderListingReadiness();
     } catch (error) {
       status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>${escapeHtml(error.message || "The next image could not be generated.")}</span>`;
@@ -2910,6 +2870,15 @@ async function generateNewProductImages() {
   refreshIcons();
 }
 
+function listingImageSceneLabel(scene) {
+  return {
+    hero: "main lifestyle image",
+    lifestyle: "second lifestyle angle",
+    detailCollage: "close-up detail collage",
+    white: "white background image"
+  }[scene] || "listing image";
+}
+
 async function createGeneratedImage(scene, customPrompt = "") {
   const generated = await apiFetch("/api/generate-product-image", {
     method: "POST",
@@ -2918,9 +2887,7 @@ async function createGeneratedImage(scene, customPrompt = "") {
       productType: state.newProductAnalysis.productType,
       title: $("#newTitle").value,
       scene,
-      customPrompt,
-      sellerPromptOnly: true,
-      imageNumber: Number(scene.replace(/^custom-/, "")) || 1
+      customPrompt
     })
   });
   const polished = await applyListingImageOverlay(generated);
@@ -3314,7 +3281,7 @@ async function applySellerLogo(generated) {
 }
 
 function shouldSkipSellerLogo(scene) {
-  return ["white", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite", `custom-${selectedProductImageCount()}`].includes(scene);
+  return ["white", "detailCollage", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene);
 }
 
 async function refreshGalleryBranding() {
@@ -3437,11 +3404,7 @@ function deleteGeneratedImage(scene) {
 async function regenerateGeneratedImage(button) {
   const scene = button.dataset.scene;
   const card = button.closest(".generated-image-card");
-  const customPrompt = card.querySelector(".image-edit-prompt").value.trim() || promptForImageScene(scene);
-  if (!customPrompt) {
-    showToast(`Write a prompt for ${scene.replace("custom-", "image ")} first.`);
-    return;
-  }
+  const customPrompt = card.querySelector(".image-edit-prompt").value.trim();
   button.disabled = true;
   button.innerHTML = `<span data-lucide="loader-circle"></span> Editing`;
   refreshIcons();
@@ -3612,7 +3575,6 @@ function renderRecentlyListedProducts() {
 function resetNewProductForm() {
   const savedBrandId = localStorage.getItem("trendlift-default-brand-id") || "";
   $("#newProductForm").reset();
-  $("#newProductImageCount").value = "3";
   $("#newBrandId").value = savedBrandId;
   $("#newQuantity").value = "1";
   $("#newVatRate").value = "15";
@@ -3637,7 +3599,6 @@ function resetNewProductForm() {
   $("#listAnotherProductBtn").classList.add("hidden");
   $("#imageGenerationStatus").classList.add("hidden");
   $("#newProductWarning").classList.add("hidden");
-  renderCustomImagePrompts();
   renderGeneratedProductImages();
   renderRequiredAttributeFields();
   renderListingReadiness();

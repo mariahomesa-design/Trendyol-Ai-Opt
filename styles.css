@@ -868,21 +868,6 @@ h3 {
   width: 100%;
 }
 
-.custom-image-prompts {
-  display: grid;
-  gap: 12px;
-}
-
-.custom-image-prompt-field {
-  display: grid;
-  gap: 7px;
-}
-
-.custom-image-prompt-field textarea {
-  min-height: 92px;
-  resize: vertical;
-}
-
 .upload-drop {
   display: grid;
   min-height: 170px;
