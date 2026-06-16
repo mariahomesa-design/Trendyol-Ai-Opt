@@ -2874,7 +2874,7 @@ function listingImageSceneLabel(scene) {
   return {
     hero: "main lifestyle image",
     lifestyle: "second lifestyle angle",
-    detailCollage: "close-up detail collage",
+    detailCollage: "product detail studio image",
     white: "white background image"
   }[scene] || "listing image";
 }
