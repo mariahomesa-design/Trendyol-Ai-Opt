@@ -1108,6 +1108,36 @@ const PRODUCT_IMAGE_SCENES = {
   }
 };
 
+const REQUIRED_PRODUCT_IMAGE_SCENES = ["hero", "lifestyle", "detailCollage", "white"];
+
+function draftPromptForImageScene({ productType, title, scene, sceneConfig, guideName, guideScenes = {}, customPrompt = "" }) {
+  const lifestyleScene = isRequiredLifestyleScene(scene);
+  return [
+    lifestyleScene
+      ? `Edit the uploaded reference into a professional lifestyle photograph of this exact ${productType || "product"} (${title || ""}). Preserve the product, but replace the plain/source background with a realistic furnished environment.`
+      : `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
+    `Furniture category guide: ${guideName || productType || "product"}. Required scene purpose: ${guideScenes[scene] || "Create the most suitable marketplace image for this product."}`,
+    sceneLifestyleRules(scene, guideName),
+    guideName === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
+    guideName === "dining table" ? "Dining table approved style reference: make every dining table image look bright, airy and premium, like a luxury furniture-brand catalog shot in a Saudi dining room during daylight. Use white or warm neutral walls, large windows, light wood or marble tones, clean table styling, soft high-key exposure, crisp HD details and realistic shadows. Do not create dark interiors, brown-heavy rooms, dramatic low light, underexposed corners or gloomy contrast." : "",
+    guideName === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. The mirror must stay the same size, shape, frame color and thickness across all images. The white-background image must be extra sharp and never blurry." : "",
+    guideName === "decorative vase" ? "Decorative vase approved style reference: lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. The white-background image must be clean, bright and uncluttered." : "",
+    "The uploaded product is the immutable source of truth.",
+    "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
+    "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
+    lifestyleScene ? "For image 1 and image 2, the final output must visibly contain a realistic room/background with floor, wall, furniture/decor context and natural lighting. A plain white background means the result is wrong." : "",
+    "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
+    "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
+    "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 clean product-detail studio image, image 4 pure white background. Do not create dimension images, text feature images, close-up collages or extra benefit cards unless the scene explicitly asks for them.",
+    ["hero", "features", "detail", "detailCollage", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance unless image 2 is a natural set. Count it before finishing and avoid accidental duplicated products." : "",
+    "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
+    "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
+    "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
+    AI_IMAGE_PROVIDER === "google" && sceneConfig.geminiPrompt ? sceneConfig.geminiPrompt : sceneConfig.prompt,
+    customPrompt ? `Additional seller direction: ${String(customPrompt).slice(0, 1000)}` : ""
+  ].filter(Boolean).join(" ");
+}
+
 async function buildImageGenerationPrompt({ image, productType, title, scene, sceneConfig, basePrompt, guideName, sellerDirection = "" }) {
   if (!providerKey(AI_ANALYSIS_PROVIDER)) return basePrompt;
   const sceneName = sceneConfig?.label || scene || "marketplace image";
@@ -1147,7 +1177,39 @@ async function buildImageGenerationPrompt({ image, productType, title, scene, sc
   return basePrompt;
 }
 
-async function generateProductImage({ image, productType, title, scene, customPrompt }) {
+async function prepareProductImagePrompts({ image, productType, title }) {
+  const guide = imageGuideFor(productType, title);
+  const prompts = [];
+  for (const scene of REQUIRED_PRODUCT_IMAGE_SCENES) {
+    const sceneConfig = PRODUCT_IMAGE_SCENES[scene];
+    const draftPrompt = draftPromptForImageScene({
+      image,
+      productType,
+      title,
+      scene,
+      sceneConfig,
+      guideName: guide.name,
+      guideScenes: guide.scenes
+    });
+    const prompt = await buildImageGenerationPrompt({
+      image,
+      productType,
+      title,
+      scene,
+      sceneConfig,
+      basePrompt: draftPrompt,
+      guideName: guide.name
+    });
+    prompts.push({
+      scene,
+      label: sceneConfig.label,
+      prompt
+    });
+  }
+  return prompts;
+}
+
+async function generateProductImage({ image, productType, title, scene, customPrompt, preparedPrompt }) {
   if (!providerKey(AI_IMAGE_PROVIDER)) {
     const error = new Error(`${providerLabel(AI_IMAGE_PROVIDER)} image generation is not configured. Add its API key in Settings.`);
     error.statusCode = 400;
@@ -1169,7 +1231,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
   }
   if (customSceneMatch) {
     const basePrompt = String(customPrompt || "").trim();
-    const prompt = await buildImageGenerationPrompt({
+    const prompt = String(preparedPrompt || "").trim() || await buildImageGenerationPrompt({
       image,
       productType,
       title,
@@ -1204,31 +1266,17 @@ async function generateProductImage({ image, productType, title, scene, customPr
   }
   const guide = imageGuideFor(productType, title);
   const lifestyleScene = isRequiredLifestyleScene(scene);
-  const draftPrompt = [
-    lifestyleScene
-      ? `Edit the uploaded reference into a professional lifestyle photograph of this exact ${productType || "product"} (${title || ""}). Preserve the product, but replace the plain/source background with a realistic furnished environment.`
-      : `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
-    `Furniture category guide: ${guide.name}. Required scene purpose: ${guide.scenes[scene] || "Create the most suitable marketplace image for this furniture product."}`,
-    sceneLifestyleRules(scene, guide.name),
-    guide.name === "dining chair" ? "Dining chair approved style reference: every lifestyle image must look like one clear professional photographer shot a matching dining chair collection in a bright real dining room. Use consistent realistic chair placement beside or around a dining table, natural daylight, white/neutral walls, warm wood floor, rug, large windows, tasteful table decor and luxury furniture-brand clarity. The room can change across listings, but the camera language and product realism must stay the same." : "",
-    guide.name === "dining table" ? "Dining table approved style reference: make every dining table image look bright, airy and premium, like a luxury furniture-brand catalog shot in a Saudi dining room during daylight. Use white or warm neutral walls, large windows, light wood or marble tones, clean table styling, soft high-key exposure, crisp HD details and realistic shadows. Do not create dark interiors, brown-heavy rooms, dramatic low light, underexposed corners or gloomy contrast." : "",
-    guide.name === "hanging wall mirror" ? "Hanging/wall mirror approved style reference: lifestyle images should look like one professional photographer shot a clear HD mirror in a warm beige/neutral home above a console, cabinet, vanity or sink, with natural sunlight, realistic reflection and clean decor. The mirror must stay the same size, shape, frame color and thickness across all images. The white-background image must be extra sharp and never blurry." : "",
-    guide.name === "decorative vase" ? "Decorative vase approved style reference: lifestyle images should use warm beige/white minimal interiors, light table or shelf surfaces, soft daylight, dried flowers or pampas when suitable, and very sharp vase texture. The white-background image must be clean, bright and uncluttered." : "",
-    "The uploaded product is the immutable source of truth.",
-    "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
-    "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
-    lifestyleScene ? "For image 1 and image 2, the final output must visibly contain a realistic room/background with floor, wall, furniture/decor context and natural lighting. A plain white background means the result is wrong." : "",
-    "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
-    "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
-    "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 clean product-detail studio image, image 4 pure white background. Do not create dimension images, text feature images, close-up collages or extra benefit cards unless the scene explicitly asks for them.",
-    ["hero", "features", "detail", "detailCollage", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance unless image 2 is a natural set. Count it before finishing and avoid accidental duplicated products." : "",
-    "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
-    "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
-    "Compose the final image vertically in a 2:3 portrait aspect ratio for a 1200 pixel wide by 1800 pixel tall marketplace image.",
-    AI_IMAGE_PROVIDER === "google" && sceneConfig.geminiPrompt ? sceneConfig.geminiPrompt : sceneConfig.prompt,
-    customPrompt ? `Additional seller direction: ${String(customPrompt).slice(0, 1000)}` : ""
-  ].filter(Boolean).join(" ");
-  const basePrompt = await buildImageGenerationPrompt({
+  const draftPrompt = draftPromptForImageScene({
+    image,
+    productType,
+    title,
+    scene,
+    sceneConfig,
+    guideName: guide.name,
+    guideScenes: guide.scenes,
+    customPrompt
+  });
+  const basePrompt = String(preparedPrompt || "").trim() || await buildImageGenerationPrompt({
     image,
     productType,
     title,
@@ -1926,6 +1974,11 @@ async function handleApi(req, res, url) {
     if (url.pathname === "/api/analyze-new-product" && req.method === "POST") {
       const body = await requestJson(req);
       const result = await analyzeNewProductImage(body.image, body.outputLanguage);
+      const imagePrompts = await prepareProductImagePrompts({
+        image: body.image,
+        productType: result.detectedProductType,
+        title: result.title
+      });
       sendJson(res, 200, {
         ok: true,
         productType: result.detectedProductType,
@@ -1941,7 +1994,8 @@ async function handleApi(req, res, url) {
         ].filter((attribute, index, rows) =>
           rows.findIndex((candidate) => normalizedAttributeText(candidate.attributeName) === normalizedAttributeText(attribute.attributeName)) === index
         ),
-        keywords: result.keywords || []
+        keywords: result.keywords || [],
+        imagePrompts
       });
       return;
     }

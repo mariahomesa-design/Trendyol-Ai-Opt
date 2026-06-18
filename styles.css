@@ -868,6 +868,51 @@ h3 {
   width: 100%;
 }
 
+.image-prompt-review {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.image-prompt-review-heading {
+  display: grid;
+  gap: 3px;
+}
+
+.image-prompt-review-heading span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.image-prompt-list {
+  display: grid;
+  gap: 10px;
+}
+
+.image-prompt-card {
+  display: grid;
+  gap: 7px;
+}
+
+.image-prompt-card label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.image-prompt-card textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+
 .upload-drop {
   display: grid;
   min-height: 170px;

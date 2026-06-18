@@ -172,6 +172,7 @@ const state = {
   keywordDataset: [],
   newProductImageData: "",
   newProductAnalysis: null,
+  newProductImagePrompts: [],
   generatedProductImages: [],
   missingCategoryAttributes: [],
   requiredCategoryAttributeCount: 0,
@@ -2619,6 +2620,8 @@ function loadNewProductImage(event) {
   const reader = new FileReader();
   reader.onload = () => {
     state.newProductImageData = String(reader.result);
+    state.newProductAnalysis = null;
+    state.newProductImagePrompts = [];
     state.generatedProductImages = [];
     state.missingCategoryAttributes = [];
     state.requiredCategoryAttributeCount = 0;
@@ -2626,6 +2629,7 @@ function loadNewProductImage(event) {
     $("#newProductPreview").src = state.newProductImageData;
     $("#newProductPreview").classList.remove("hidden");
     renderGeneratedProductImages();
+    renderImagePromptReview();
     $("#createAiStatus").textContent = "Ready to analyze";
     $("#newProductWarning").classList.add("hidden");
     $("#imageGenerationStatus").classList.add("hidden");
@@ -2792,6 +2796,7 @@ async function analyzeNewProduct() {
       body: JSON.stringify({ image: state.newProductImageData, outputLanguage: state.settings.languageMode })
     });
     state.newProductAnalysis = result;
+    state.newProductImagePrompts = Array.isArray(result.imagePrompts) ? result.imagePrompts : [];
     $("#newTitle").value = result.title || "";
     $("#newDescription").value = result.description || "";
     $("#newSuggestedCategory").value = result.suggestedCategory || result.productType || "";
@@ -2806,6 +2811,7 @@ async function analyzeNewProduct() {
     warning.textContent = `${result.warning || "AI-generated fields require review."} Add the exact Trendyol brand ID, category ID, barcode, model code and stock code before submission.`;
     warning.classList.remove("hidden");
     setOperation(`New product image analyzed as ${result.productType || "product"}`);
+    renderImagePromptReview();
     renderListingReadiness();
   } catch (error) {
     showToast(error.message || "Image analysis failed.");
@@ -2821,6 +2827,43 @@ function getRequiredProductImageScenes() {
   return ["hero", "lifestyle", "detailCollage", "white"];
 }
 
+function renderImagePromptReview() {
+  const wrap = $("#imagePromptReview");
+  const list = $("#imagePromptList");
+  if (!wrap || !list) return;
+  const scenes = getRequiredProductImageScenes();
+  const prompts = new Map((state.newProductImagePrompts || []).map((item) => [item.scene, item]));
+  if (!state.newProductImageData || !state.newProductAnalysis) {
+    wrap.classList.add("hidden");
+    list.innerHTML = "";
+    return;
+  }
+  wrap.classList.remove("hidden");
+  list.innerHTML = scenes.map((scene, index) => {
+    const item = prompts.get(scene) || {};
+    return `
+      <div class="image-prompt-card">
+        <label for="imagePrompt-${scene}">
+          <span>Image ${index + 1}: ${escapeHtml(item.label || listingImageSceneLabel(scene))}</span>
+        </label>
+        <textarea id="imagePrompt-${scene}" class="image-prompt-text" data-scene="${scene}" rows="6">${escapeHtml(item.prompt || "")}</textarea>
+      </div>
+    `;
+  }).join("");
+}
+
+function currentImagePrompts() {
+  return $$(".image-prompt-text").map((input) => ({
+    scene: input.dataset.scene,
+    label: listingImageSceneLabel(input.dataset.scene),
+    prompt: input.value.trim()
+  }));
+}
+
+function promptForGeneratedScene(scene) {
+  return currentImagePrompts().find((item) => item.scene === scene)?.prompt || "";
+}
+
 function syncGeneratedImagesToPromptCount() {
   const scenes = new Set(getRequiredProductImageScenes());
   state.generatedProductImages = state.generatedProductImages.filter((item) => scenes.has(item.scene));
@@ -2833,6 +2876,10 @@ async function generateNewProductImages() {
   }
   if (!state.generationAiAvailable) {
     showToast("Enable an image generation provider in Settings first.");
+    return;
+  }
+  if (!state.newProductImagePrompts.length) {
+    showToast("Analyze the product first so AI can write image prompts.");
     return;
   }
   const button = $("#generateImagesBtn");
@@ -2850,7 +2897,12 @@ async function generateNewProductImages() {
     status.innerHTML = `<strong>${completed} of ${totalImages} images created</strong><span>Creating ${listingImageSceneLabel(scene)}.</span>`;
     refreshIcons();
     try {
-      const result = await createGeneratedImage(scene);
+      const scenePrompt = promptForGeneratedScene(scene);
+      if (!scenePrompt) {
+        showToast(`Image prompt missing for ${listingImageSceneLabel(scene)}.`);
+        break;
+      }
+      const result = await createGeneratedImage(scene, scenePrompt);
       state.generatedProductImages.push(result);
       completed += 1;
       renderGeneratedProductImages();
@@ -2887,7 +2939,8 @@ async function createGeneratedImage(scene, customPrompt = "") {
       productType: state.newProductAnalysis.productType,
       title: $("#newTitle").value,
       scene,
-      customPrompt
+      customPrompt,
+      preparedPrompt: customPrompt
     })
   });
   const polished = await applyListingImageOverlay(generated);
@@ -3588,6 +3641,7 @@ function resetNewProductForm() {
   $("#newProductPreview").classList.add("hidden");
   state.newProductImageData = "";
   state.newProductAnalysis = null;
+  state.newProductImagePrompts = [];
   state.generatedProductImages = [];
   state.missingCategoryAttributes = [];
   state.requiredCategoryAttributeCount = 0;
@@ -3599,6 +3653,7 @@ function resetNewProductForm() {
   $("#listAnotherProductBtn").classList.add("hidden");
   $("#imageGenerationStatus").classList.add("hidden");
   $("#newProductWarning").classList.add("hidden");
+  renderImagePromptReview();
   renderGeneratedProductImages();
   renderRequiredAttributeFields();
   renderListingReadiness();
