@@ -1012,6 +1012,38 @@ function isRequiredLifestyleScene(scene, prompt = "") {
   return isCustomImageScene(scene) && promptRequestsLifestyle(prompt);
 }
 
+function lifestyleFinalGuard(scene, prompt = "") {
+  if (!isRequiredLifestyleScene(scene, prompt)) {
+    return [
+      "FINAL PRODUCT FIDELITY RULES:",
+      "Preserve the exact reference product identity, proportions, color, material, texture, hardware, legs and construction.",
+      "Do not create a collage, moodboard, split-screen, multiple panels, small inset product thumbnails, pasted cutouts, screenshots, text, labels, watermarks or extra logos."
+    ].join(" ");
+  }
+  const sceneLabel = scene === "lifestyle" ? "IMAGE 2 SECOND LIFESTYLE ANGLE" : "IMAGE 1 MAIN LIFESTYLE";
+  return [
+    `FINAL HARD RULES FOR ${sceneLabel}:`,
+    "Create one single uninterrupted photorealistic lifestyle photograph in a complete furnished room or real-use environment.",
+    "Do not create a collage, moodboard, split-screen, multi-panel layout, frame-within-frame, product comparison board, catalog sheet, feature card, infographic, screenshot or any pasted product cutout.",
+    "Do not place the product on a pure white, off-white, grey, beige or empty studio/catalog background.",
+    "Do not leave large blank white blocks or empty blank space above, beside or behind the product.",
+    "The environment must cover the full portrait frame with visible floor, wall, decor/furniture context, natural light and realistic shadows.",
+    "At least 80 percent of the image area must look like a real room photograph, not a plain background.",
+    "Show the uploaded product as one physical object placed naturally in the room. Do not show mini copies, thumbnails or duplicate product cutouts.",
+    scene === "lifestyle"
+      ? "For image 2 only, show a natural set only when the item is normally sold/used as a set; otherwise show one product from another camera angle."
+      : "For image 1, show one hero product only as the main focus.",
+    "The product must be fully visible, sharp, correctly scaled, uncropped and faithful to the reference product.",
+    "No humans, no text, no labels, no arrows, no measurement lines, no watermark and no extra logo."
+  ].join(" ");
+}
+
+function guardedProviderPrompt(prompt, scene) {
+  const basePrompt = String(prompt || "").trim();
+  const guard = lifestyleFinalGuard(scene, basePrompt);
+  return [guard, "USER/AI PROMPT TO FOLLOW:", basePrompt].filter(Boolean).join("\n\n");
+}
+
 const PRODUCT_IMAGE_SCENES = {
   diningChairHero: {
     label: "Dining chair hero",
@@ -1125,7 +1157,8 @@ function draftPromptForImageScene({ productType, title, scene, sceneConfig, guid
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
-    lifestyleScene ? "For image 1 and image 2, the final output must visibly contain a realistic room/background with floor, wall, furniture/decor context and natural lighting. A plain white background means the result is wrong." : "",
+    lifestyleScene ? "For image 1 and image 2, the final output must be one single uninterrupted lifestyle photograph with a realistic room/background, floor, wall, furniture/decor context and natural lighting. A plain white background, collage, moodboard, split-screen, product cutout board, feature card, mini product thumbnail layout or large blank area means the result is wrong." : "",
+    lifestyleScene ? "The product must be physically placed in the room, not pasted over a white/blank layer. The room should fill the whole portrait frame." : "",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
     "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 clean product-detail studio image, image 4 pure white background. Do not create dimension images, text feature images, close-up collages or extra benefit cards unless the scene explicitly asks for them.",
@@ -1153,6 +1186,8 @@ async function buildImageGenerationPrompt({ image, productType, title, scene, sc
     "For image 2, make it a second lifestyle photo in the same room style from a different angle, wider or farther where useful.",
     "For image 3, make it a clean product-detail studio image on a white or very light neutral background, full product visible, no collage and no logo.",
     "For image 4, make it a pure white-background product image, full product only, no logo.",
+    "For image 1 and image 2, explicitly forbid collage, moodboard, split-screen, multiple panels, mini product cutouts, pasted catalog cutouts, empty white blocks and plain studio/catalog backgrounds.",
+    "For image 1 and image 2, require one single full-frame lifestyle room photograph where the product is physically present in the room.",
     "All images must be vertical 1200 x 1800 ecommerce composition.",
     "Always prohibit humans, text, labels, diagrams, measurement lines, watermarks and extra logos.",
     "Use professional furniture-brand photography wording: realistic daylight, natural shadows, accurate scale, sharp product detail and high-end composition.",
@@ -1245,14 +1280,15 @@ async function generateProductImage({ image, productType, title, scene, customPr
     let lastError;
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       try {
+        const finalPrompt = guardedProviderPrompt(prompt, scene);
         const result = await requestProductImageFromProvider({
           image,
-          prompt,
+          prompt: finalPrompt,
           sceneConfig,
           scene,
           attempt
         });
-        await validateGeneratedLifestyleResult(result, scene, prompt);
+        await validateGeneratedLifestyleResult(result, scene, finalPrompt);
         return result;
       } catch (error) {
         lastError = error;
@@ -1292,13 +1328,14 @@ async function generateProductImage({ image, productType, title, scene, customPr
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const retryPrompt = attempt > 1
       ? [
-          "RETRY BECAUSE THE PREVIOUS IMAGE WAS REJECTED: the last result looked like a white/plain catalog image.",
-          "This time you must create a true lifestyle room photo. Fill the portrait frame with a realistic furnished room, wall, floor, decor and natural lighting.",
+          "RETRY BECAUSE THE PREVIOUS IMAGE WAS REJECTED: the last result looked like a white/plain catalog image, collage, cutout board or empty studio layout.",
+          "This time you must create one single uninterrupted true lifestyle room photo. Fill the portrait frame with a realistic furnished room, wall, floor, decor and natural lighting.",
+          "No collage, no split screen, no panels, no mini product thumbnails, no pasted product cutouts and no white blocks.",
           "Do not leave a large blank white, beige, grey or empty area above or around the product.",
           "For a TV stand/media console, show it in a living room below a TV or styled media wall, with rug, wall decor, plants or media objects as natural context."
         ].join(" ")
       : "";
-    const prompt = [basePrompt, retryPrompt].filter(Boolean).join("\n");
+    const prompt = guardedProviderPrompt([basePrompt, retryPrompt].filter(Boolean).join("\n"), scene);
     try {
       const result = await requestProductImageFromProvider({ image, prompt, sceneConfig, scene, attempt });
       await validateGeneratedLifestyleResult(result, scene);
@@ -1433,7 +1470,7 @@ async function requestGeminiImageWithRetry(model, imagePart, prompt, maxAttempts
 }
 
 function ideogramImageWeightFor(scene, prompt, attempt) {
-  if (isRequiredLifestyleScene(scene, prompt)) return attempt > 1 ? "18" : "28";
+  if (isRequiredLifestyleScene(scene, prompt)) return attempt > 1 ? "10" : "16";
   if (isCustomImageScene(scene)) return promptRequestsWhiteCatalog(prompt) ? "70" : "45";
   return "70";
 }
@@ -1555,8 +1592,8 @@ async function validateGeneratedLifestyleResult(result, scene, prompt = "") {
 
   const overallPlainRatio = overallPlain / totalPixels;
   const topPlainRatio = topPlain / topPixels;
-  if (overallPlainRatio > 0.68 || topPlainRatio > 0.86) {
-    const error = new Error("AI returned a plain catalog-style background instead of a lifestyle room. Retrying with stronger room instructions.");
+  if (overallPlainRatio > 0.54 || topPlainRatio > 0.72) {
+    const error = new Error("AI returned a plain/collage/cutout-style image instead of a full lifestyle room. Retrying with stronger room instructions.");
     error.retryLifestyle = true;
     error.generatedImagePath = filePath;
     throw error;
