@@ -1108,6 +1108,45 @@ const PRODUCT_IMAGE_SCENES = {
   }
 };
 
+async function buildImageGenerationPrompt({ image, productType, title, scene, sceneConfig, basePrompt, guideName, sellerDirection = "" }) {
+  if (!providerKey(AI_ANALYSIS_PROVIDER)) return basePrompt;
+  const sceneName = sceneConfig?.label || scene || "marketplace image";
+  const prompt = [
+    "You are an expert ecommerce furniture prompt engineer for AI image generation.",
+    "Inspect the uploaded product image first and identify the exact physical item.",
+    "Rewrite the supplied draft into one excellent final image-generation prompt.",
+    "The final prompt must be specific to the item in the image, not generic.",
+    "Preserve the exact product identity: shape, color, material, pattern, proportions, legs, handles, shelves, top surface, frame, hardware and visible construction.",
+    "For lifestyle images, choose the correct real-use environment for the detected item and describe it clearly.",
+    "Examples: side/end table beside a sofa with only part of the sofa visible; TV stand under or near a media wall; dining chair beside/around a dining table; office chair in an office; vase on a table or shelf; mirror on a wall above a console or vanity.",
+    "For image 1, make it a premium main lifestyle photo with the product fully visible and the hero focus.",
+    "For image 2, make it a second lifestyle photo in the same room style from a different angle, wider or farther where useful.",
+    "For image 3, make it a clean product-detail studio image on a white or very light neutral background, full product visible, no collage and no logo.",
+    "For image 4, make it a pure white-background product image, full product only, no logo.",
+    "All images must be vertical 1200 x 1800 ecommerce composition.",
+    "Always prohibit humans, text, labels, diagrams, measurement lines, watermarks and extra logos.",
+    "Use professional furniture-brand photography wording: realistic daylight, natural shadows, accurate scale, sharp product detail and high-end composition.",
+    "If the seller gave extra direction, keep the useful parts but fix it into a professional prompt.",
+    `Detected or supplied product type: ${productType || ""}`,
+    `Listing title: ${title || ""}`,
+    `Scene key: ${scene}`,
+    `Scene name: ${sceneName}`,
+    `Category guide: ${guideName || ""}`,
+    `Seller direction: ${sellerDirection || ""}`,
+    `Draft prompt to improve: ${basePrompt}`,
+    'Return only JSON: {"prompt":"final prompt here"}'
+  ].join("\n");
+
+  try {
+    const result = await requestStructuredAnalysis(prompt, image);
+    const improvedPrompt = sanitizeGeneratedCopy(result.prompt).slice(0, 5000);
+    if (improvedPrompt.length > 200) return improvedPrompt;
+  } catch {
+    // Prompt building is an enhancement; image generation should still work without it.
+  }
+  return basePrompt;
+}
+
 async function generateProductImage({ image, productType, title, scene, customPrompt }) {
   if (!providerKey(AI_IMAGE_PROVIDER)) {
     const error = new Error(`${providerLabel(AI_IMAGE_PROVIDER)} image generation is not configured. Add its API key in Settings.`);
@@ -1129,7 +1168,16 @@ async function generateProductImage({ image, productType, title, scene, customPr
     throw error;
   }
   if (customSceneMatch) {
-    const prompt = String(customPrompt || "").trim();
+    const basePrompt = String(customPrompt || "").trim();
+    const prompt = await buildImageGenerationPrompt({
+      image,
+      productType,
+      title,
+      scene,
+      sceneConfig,
+      basePrompt,
+      sellerDirection: basePrompt
+    });
     const lifestyleScene = isRequiredLifestyleScene(scene, prompt);
     const maxAttempts = lifestyleScene ? 2 : 1;
     let lastError;
@@ -1156,7 +1204,7 @@ async function generateProductImage({ image, productType, title, scene, customPr
   }
   const guide = imageGuideFor(productType, title);
   const lifestyleScene = isRequiredLifestyleScene(scene);
-  const basePrompt = [
+  const draftPrompt = [
     lifestyleScene
       ? `Edit the uploaded reference into a professional lifestyle photograph of this exact ${productType || "product"} (${title || ""}). Preserve the product, but replace the plain/source background with a realistic furnished environment.`
       : `Edit the uploaded reference into a professional image of this exact ${productType || "product"} (${title || ""}).`,
@@ -1180,6 +1228,16 @@ async function generateProductImage({ image, productType, title, scene, customPr
     AI_IMAGE_PROVIDER === "google" && sceneConfig.geminiPrompt ? sceneConfig.geminiPrompt : sceneConfig.prompt,
     customPrompt ? `Additional seller direction: ${String(customPrompt).slice(0, 1000)}` : ""
   ].filter(Boolean).join(" ");
+  const basePrompt = await buildImageGenerationPrompt({
+    image,
+    productType,
+    title,
+    scene,
+    sceneConfig,
+    basePrompt: draftPrompt,
+    guideName: guide.name,
+    sellerDirection: customPrompt
+  });
 
   const maxAttempts = lifestyleScene ? 2 : 1;
   let lastError;
