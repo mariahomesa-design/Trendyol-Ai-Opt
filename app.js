@@ -2926,7 +2926,7 @@ function listingImageSceneLabel(scene) {
   return {
     hero: "main lifestyle image",
     lifestyle: "second lifestyle angle",
-    detailCollage: "product detail studio image",
+    detailCollage: "third lifestyle angle",
     white: "white background image"
   }[scene] || "listing image";
 }
@@ -3334,7 +3334,7 @@ async function applySellerLogo(generated) {
 }
 
 function shouldSkipSellerLogo(scene) {
-  return ["white", "detailCollage", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene);
+  return ["white", "wallMirrorWhite", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene);
 }
 
 async function refreshGalleryBranding() {

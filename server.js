@@ -987,6 +987,17 @@ function sceneLifestyleRules(scene, guideName) {
       "Do not place the product alone on a plain white or grey studio background for image 2."
     ].join(" ");
   }
+  if (scene === "detailCollage") {
+    return [
+      "HARD REQUIREMENT FOR IMAGE 3: this must be a third lifestyle image in the product's correct real-use place, not a white-background catalog image, not a studio cutout, not a feature card, not a dimensions image, not a close-up detail image and not an infographic.",
+      "Use the same premium room style as image 1 and image 2, but choose a clearly different camera position, distance or composition so it feels like a professional photographer shot another angle in the same kind of environment.",
+      "Replace the source photo background with a complete realistic room. Do not keep the uploaded photo's original white, grey or plain background.",
+      "Show the product fully visible, clear, sharp, correctly scaled, physically placed in the room and not cropped.",
+      "The product must not float in the middle of blank space. It must stand on a realistic floor or surface inside the room with visible wall, floor, furniture/decor context and natural shadows.",
+      categoryExamples,
+      "Do not place the product alone on a plain white or grey studio background for image 3."
+    ].join(" ");
+  }
   if (scene === "white") {
     return "HARD REQUIREMENT FOR IMAGE 4: this is the only white-background image. Show the full exact product only, centered, sharp, uncropped, with no room, no props, no logo, no text and no lifestyle environment.";
   }
@@ -1008,7 +1019,7 @@ function promptRequestsLifestyle(prompt) {
 }
 
 function isRequiredLifestyleScene(scene, prompt = "") {
-  if (scene === "hero" || scene === "lifestyle") return true;
+  if (scene === "hero" || scene === "lifestyle" || scene === "detailCollage") return true;
   return isCustomImageScene(scene) && promptRequestsLifestyle(prompt);
 }
 
@@ -1020,7 +1031,11 @@ function lifestyleFinalGuard(scene, prompt = "") {
       "Do not create a collage, moodboard, split-screen, multiple panels, small inset product thumbnails, pasted cutouts, screenshots, text, labels, watermarks or extra logos."
     ].join(" ");
   }
-  const sceneLabel = scene === "lifestyle" ? "IMAGE 2 SECOND LIFESTYLE ANGLE" : "IMAGE 1 MAIN LIFESTYLE";
+  const sceneLabel = scene === "lifestyle"
+    ? "IMAGE 2 SECOND LIFESTYLE ANGLE"
+    : scene === "detailCollage"
+      ? "IMAGE 3 THIRD LIFESTYLE ANGLE"
+      : "IMAGE 1 MAIN LIFESTYLE";
   return [
     `FINAL HARD RULES FOR ${sceneLabel}:`,
     "Create one single uninterrupted photorealistic lifestyle photograph in a complete furnished room or real-use environment.",
@@ -1032,6 +1047,8 @@ function lifestyleFinalGuard(scene, prompt = "") {
     "Show the uploaded product as one physical object placed naturally in the room. Do not show mini copies, thumbnails or duplicate product cutouts.",
     scene === "lifestyle"
       ? "For image 2 only, show a natural set only when the item is normally sold/used as a set; otherwise show one product from another camera angle."
+      : scene === "detailCollage"
+        ? "For image 3, show the same product in the correct real-use place from a third different lifestyle angle or distance."
       : "For image 1, show one hero product only as the main focus.",
     "The product must be fully visible, sharp, correctly scaled, uncropped and faithful to the reference product.",
     "No humans, no text, no labels, no arrows, no measurement lines, no watermark and no extra logo."
@@ -1117,8 +1134,8 @@ const PRODUCT_IMAGE_SCENES = {
     prompt: "Create image 2 of exactly 4: a second premium lifestyle photograph of the exact same uploaded item in the same type of area and same room style as image 1, but shot from another camera angle, a little farther away, covering more of the surrounding space and showing more supporting decor/items while keeping the uploaded product as the focus. If the product naturally belongs in a set, such as chairs, stools, paired decor or modular pieces, show the set clearly and realistically; otherwise show one product only from another perspective. The product must stay fully visible, sharp, accurate, correctly scaled and not cropped. No humans, no text, no labels, no graphic lines, no extra logos. Do not use a white-background catalog setup for image 2."
   },
   detailCollage: {
-    label: "Product detail studio image",
-    prompt: "Create image 3 of exactly 4: a clean premium product-detail studio image of the exact uploaded item on a white or very light neutral studio background. Show the complete item fully visible, centered, sharp, realistic and uncropped, with slightly closer product focus than the final white-background image while still showing the full product. Preserve the exact uploaded item: shape, color, material, wood grain, pattern, legs, handles, frame, proportions and all visible details. Use soft realistic studio lighting, a subtle natural contact shadow and high-end ecommerce clarity. Do not create a collage. Do not create four panels. Do not add close-up boxes, text, labels, feature names, icons, arrows, badges, measurement lines, dimensions, graphic overlays, props, lifestyle room, extra colors, people or logo."
+    label: "Third lifestyle angle",
+    prompt: "Create image 3 of exactly 4: a third premium realistic lifestyle photograph of the exact uploaded item in the correct place where this item is used. Use the same high-end room style as image 1 and image 2, but change the camera position, distance and composition so it feels like another professional photoshoot angle. The product must be fully visible, physically placed in the room, sharp, correctly scaled, realistic and uncropped. Preserve the exact uploaded item: shape, color, material, wood grain, pattern, legs, handles, frame, proportions and all visible details. Use natural light, realistic shadows, clean interior styling and premium ecommerce composition. No humans, no text, no labels, no graphic lines, no extra logos. Do not create a collage, studio cutout, detail panel, feature card or white-background catalog image."
   },
   elevated: {
     label: "Elevated room angle",
@@ -1157,11 +1174,11 @@ function draftPromptForImageScene({ productType, title, scene, sceneConfig, guid
     "The uploaded product is the immutable source of truth.",
     "Preserve its identity, silhouette, geometry, upholstery pattern, color placement, materials, seams, openings, legs, hardware, proportions and construction details with extremely high fidelity.",
     "Remove any existing logos, watermarks, old seller marks, badges, text overlays or corner branding from the source image and generated scene. Only the app may add the seller's uploaded logo afterward.",
-    lifestyleScene ? "For image 1 and image 2, the final output must be one single uninterrupted lifestyle photograph with a realistic room/background, floor, wall, furniture/decor context and natural lighting. A plain white background, collage, moodboard, split-screen, product cutout board, feature card, mini product thumbnail layout or large blank area means the result is wrong." : "",
+    lifestyleScene ? "For image 1, image 2 and image 3, the final output must be one single uninterrupted lifestyle photograph with a realistic room/background, floor, wall, furniture/decor context and natural lighting. A plain white background, collage, moodboard, split-screen, product cutout board, feature card, mini product thumbnail layout or large blank area means the result is wrong." : "",
     lifestyleScene ? "The product must be physically placed in the room, not pasted over a white/blank layer. The room should fill the whole portrait frame." : "",
     "Do not redesign, simplify, stretch, widen, narrow, recolor, re-pattern or replace any part of the product.",
     "Do not duplicate the product unless image 2 is for a category that naturally uses a set or multiple matching pieces.",
-    "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 clean product-detail studio image, image 4 pure white background. Do not create dimension images, text feature images, close-up collages or extra benefit cards unless the scene explicitly asks for them.",
+    "For new listing generation, only four final image types are allowed: image 1 main lifestyle, image 2 second lifestyle angle in the same area, image 3 third lifestyle angle in the correct real-use place, image 4 pure white background. Do not create dimension images, text feature images, close-up collages or extra benefit cards unless the scene explicitly asks for them.",
     ["hero", "features", "detail", "detailCollage", "benefits", "white", "optimizationRequested", "wallMirrorHero", "wallMirrorLifestyle", "wallMirrorDetail", "wallMirrorSize", "wallMirrorWhite", "vaseHero", "vaseFeatures", "vaseSize", "vaseWhite"].includes(scene) ? "This image must contain exactly one product instance unless image 2 is a natural set. Count it before finishing and avoid accidental duplicated products." : "",
     "The result must look like premium professional ecommerce photography, not a low-resolution composite, cutout, render, illustration or enlarged screenshot.",
     "Use crisp edges, fine material texture, realistic lens perspective, coherent lighting, natural shadows and high dynamic range.",
@@ -1184,10 +1201,10 @@ async function buildImageGenerationPrompt({ image, productType, title, scene, sc
     "Examples: side/end table beside a sofa with only part of the sofa visible; TV stand under or near a media wall; dining chair beside/around a dining table; office chair in an office; vase on a table or shelf; mirror on a wall above a console or vanity.",
     "For image 1, make it a premium main lifestyle photo with the product fully visible and the hero focus.",
     "For image 2, make it a second lifestyle photo in the same room style from a different angle, wider or farther where useful.",
-    "For image 3, make it a clean product-detail studio image on a white or very light neutral background, full product visible, no collage and no logo.",
+    "For image 3, make it a third lifestyle photo in the product's correct real-use place, with another camera position or distance, full product visible and no collage.",
     "For image 4, make it a pure white-background product image, full product only, no logo.",
-    "For image 1 and image 2, explicitly forbid collage, moodboard, split-screen, multiple panels, mini product cutouts, pasted catalog cutouts, empty white blocks and plain studio/catalog backgrounds.",
-    "For image 1 and image 2, require one single full-frame lifestyle room photograph where the product is physically present in the room.",
+    "For image 1, image 2 and image 3, explicitly forbid collage, moodboard, split-screen, multiple panels, mini product cutouts, pasted catalog cutouts, empty white blocks and plain studio/catalog backgrounds.",
+    "For image 1, image 2 and image 3, require one single full-frame lifestyle room photograph where the product is physically present in the room.",
     "All images must be vertical 1200 x 1800 ecommerce composition.",
     "Always prohibit humans, text, labels, diagrams, measurement lines, watermarks and extra logos.",
     "Use professional furniture-brand photography wording: realistic daylight, natural shadows, accurate scale, sharp product detail and high-end composition.",
